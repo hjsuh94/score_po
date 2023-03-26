@@ -1,0 +1,124 @@
+import numpy as np
+import torch
+import torch.optim as optim
+from tqdm import tqdm
+import matplotlib.pyplot as plt
+
+from score_po.optimizer import OptimizerParams
+from score_po.dataset import Dataset
+
+
+class ScoreFunctionEstimator:
+    """
+    Score function estimator that stores the object
+    ∇_z log p(z): R^(dim_x + dim_u) -> R^(dim_x + dim_u), where
+    z = [x, u]^T. The class has functionalities for:
+    1. Returning ∇_z log p(z), ∇_x log p(x,u), ∇_u log p(x,u)
+    2. Training the estimator from existing data of (x,u) pairs.
+    3. Training the
+    """
+
+    def __init__(self, network, dim_x, dim_u):
+        self.net = network
+        self.dim_x = dim_x
+        self.dim_u = dim_u
+
+    def get_score_z_given_z(self, z, sigma, eval=True):
+        """
+        input:
+            z of shape (B, dim_x + dim_u)
+            sigma, float
+        output:
+            ∇_z log p(z) of shape (B, dim_x + dim_u)
+        """
+        if eval:
+            self.net.eval()
+
+        input = torch.hstack((z, sigma * torch.ones(z.shape[0], 1)))
+        return self.net(input)
+
+    def get_score_x_given_z(self, z, sigma, eval=True):
+        """Give ∇_x log p(z) part of the score function."""
+        return self.get_score_z_given_z(z, sigma, eval)[:, : self.dim_x]
+
+    def get_score_u_given_z(self, z, sigma, eval=True):
+        """Give ∇_u log p(z) part of the score function."""
+        return self.get_score_z_given_z(z, sigma, eval)[:, self.dim_x :]
+
+    # The rest of the functions are same except they have x u as arguments.
+    def get_score_z_given_xu(self, x, u, sigma, eval=True):
+        z = self.hstack((x, u))
+        return self.get_score_z_given_z(z, sigma, eval)
+
+    def get_score_x_given_xu(self, x, u, sigma, eval=True):
+        z = self.hstack((x, u))
+        return self.get_score_x_given_z(z, sigma, eval)
+
+    def get_score_x_given_xu(self, x, u, sigma, eval=True):
+        z = self.hstack((x, u))
+        return self.get_score_u_given_z(z, sigma, eval)
+
+    def evaluate_denoising_loss_with_sigma(self, data, sigma):
+        """
+        Evaluate denoising loss, Eq.(5) from Song & Ermon.
+            data of shape (B, dim_x + dim_u)
+            sigma, a scalar variable.
+        """
+        databar = data + torch.randn_like(data) * sigma
+        target = -1 / (sigma**2) * (databar - data)
+        scores = self.get_score_z_given_z(databar, sigma, eval=False)
+
+        target = target.view(target.shape[0], -1)
+        scores = scores.view(scores.shape[0], -1)
+
+        loss = 0.5 * ((scores - target) ** 2).sum(dim=-1).mean(dim=0)
+        return loss
+
+    def evaluate_denoising_loss(self, data, sigma_lst):
+        """
+        Evaluate loss given input:
+            data: of shape (B, dim_x + dim_u)
+            sigma_lst: a geometric sequence of sigmas to train on.
+        """
+        loss = torch.zeros(1)
+        for sigma in sigma_lst:
+            loss += sigma**2.0 * self.evaluate_denoising_loss_with_sigma(data, sigma)
+        return loss / len(sigma_lst)
+
+    def train_network(
+        self,
+        dataset: Dataset,
+        params: OptimizerParams,
+        sigma_max=1,
+        sigma_min=-3,
+        n_sigmas=10,
+    ):
+        """
+        Train a network given a dataset and optimization parameters.
+        Following Song & Ermon, we train a noise-conditioned score function where
+        the sequence of noise is provided with a geometric sequence of length
+        n_sigmas, with max 10^log_sigma_max and min 10^log_sigma_min.
+        """
+        self.net.train()
+        optimizer = optim.Adam(self.net.parameters(), params.lr)
+        scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, params.iters)
+
+        sigma_lst = np.geomspace(sigma_min, sigma_max, n_sigmas)
+        loss_lst = torch.zeros(params.iters)
+
+        for iter in tqdm(range(params.iters)):
+            optimizer.zero_grad()
+            data_samples = dataset.draw_from_dataset(params.batch_size)
+            loss = self.evaluate_denoising_loss(data_samples, sigma_lst)
+            loss_lst[iter] = torch.clone(loss)[0].detach()
+            loss.backward()
+            optimizer.step()
+            scheduler.step()
+
+        return loss_lst
+
+    def save_network_parameters(self, filename):
+        torch.save(self.net.state_dict(), filename)
+
+    def load_network_parameters(self, filename):
+        self.net.load_state_dict(torch.load(filename))
