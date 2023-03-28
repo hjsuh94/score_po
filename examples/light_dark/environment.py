@@ -4,7 +4,6 @@ import matplotlib.pyplot as plt
 
 from score_po.dataset import Dataset
 from score_po.score_matching import ScoreFunctionEstimator
-from score_po.policy_optimizer import OptimizerParams
 
 
 class Environment:
