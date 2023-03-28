@@ -4,7 +4,7 @@ import torch.optim as optim
 from tqdm import tqdm
 
 from score_po.policy import Policy
-from score_po.optimizer import OptimizerParams
+from score_po.nn import AdamOptimizerParams
 from score_po.dataset import Dataset, DynamicsDataset
 
 """
@@ -84,7 +84,7 @@ class NNDynamicalSystem(DynamicalSystem):
         return loss
 
     def train_network(
-        self, dataset: DynamicsDataset, params: OptimizerParams, sigma=0.0
+        self, dataset: DynamicsDataset, params: AdamOptimizerParams, sigma=0.0
     ):
         """
         Train a network given a dataset and optimization parameters.

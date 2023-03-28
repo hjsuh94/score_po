@@ -9,8 +9,8 @@ import matplotlib.pyplot as plt
 
 from score_po.dataset import Dataset
 from score_po.score_matching import ScoreFunctionEstimator
-from score_po.optimizer import OptimizerParams
-from score_po.nn_architectures import MLP
+from score_po.policy_optimizer import OptimizerParams
+from score_po.nn import MLP
 
 from environment import Environment, plot_samples_and_enviroment
 

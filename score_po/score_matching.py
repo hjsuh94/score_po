@@ -4,7 +4,7 @@ import torch.optim as optim
 from tqdm import tqdm
 import matplotlib.pyplot as plt
 
-from score_po.optimizer import OptimizerParams
+from score_po.nn import AdamOptimizerParams
 from score_po.dataset import Dataset
 
 
@@ -88,7 +88,7 @@ class ScoreFunctionEstimator:
     def train_network(
         self,
         dataset: Dataset,
-        params: OptimizerParams,
+        params: AdamOptimizerParams,
         sigma_max=1,
         sigma_min=-3,
         n_sigmas=10,

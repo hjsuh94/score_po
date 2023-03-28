@@ -4,9 +4,13 @@ import torch.nn as nn
 import matplotlib.pyplot as plt
 
 """
-List of NN architectures used for the repo.
+List of architectures and parameters for NN training.
 """
-
+class AdamOptimizerParams:
+    def __init__(self):
+        self.lr = 1e-3
+        self.iters = 1000
+        self.batch_size = 512
 
 class MLP(nn.Module):
     """

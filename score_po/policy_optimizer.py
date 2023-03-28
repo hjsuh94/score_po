@@ -6,11 +6,6 @@ import matplotlib.pyplot as plt
 
 from score_po.score_matching import ScoreFunctionEstimator
 
-class OptimizerParams:
-    def __init__(self):
-        self.lr = 1e-3
-        self.iters = 1000
-        self.batch_size = 512
 
 
 class PolicyOptimizerParams:
@@ -125,9 +120,10 @@ class PolicyOptimizer:
         cost += self.cost.get_terminal_cost_batch(x_trj_batch[:, self.params.T, :])
         return cost
 
-    def get_policy_gradient(self, x0_batch):
+    def get_policy_gradient(self, x0_batch, policy_params):
         """
-        Obtain the policy gradient of the value function starting from state x0.
+        Given a batch of x0_batch and the current policy parameters,
+        obtain gradients of the policy.
         """
         raise NotImplementedError("This function is virtual.")
 
@@ -147,7 +143,8 @@ class PolicyOptimizer:
 
             self.policy_history[iter + 1] = self.policy_history[
                 iter
-            ] - self.params.lr * self.get_policy_gradient(x0_batch)
+            ] - self.params.lr * self.get_policy_gradient(x0_batch,
+                                                          self.policy_history[iter])
 
             self.policy.set_parameters(self.policy_history[iter + 1])
 
@@ -176,7 +173,7 @@ class FirstOrderPolicyOptimizer(PolicyOptimizer):
     def __init__(self, params: PolicyOptimizerParams):
         super().__init__(params)
 
-    def get_policy_gradient(self, x0_batch):
+    def get_policy_gradient(self, x0_batch, policy_params):
         """
         Given x0_batch, obtain the policy gradients.
         """
@@ -186,7 +183,7 @@ class FirstOrderPolicyOptimizer(PolicyOptimizer):
         )
 
         # Initiate autodiff.
-        params = self.policy_history[iter]
+        params = policy_params.clone()
         params.requires_grad = True
         self.policy.set_parameters(params)
 
@@ -206,7 +203,7 @@ class FirstOrderNNPolicyOptimizer(PolicyOptimizer):
     def __init__(self, params: PolicyOptimizerParams):
         super().__init__(params)
 
-    def get_policy_gradient(self, x0_batch):
+    def get_policy_gradient(self, x0_batch, policy_params):
         """
         Given x0_batch, obtain the policy gradients.
         """
@@ -216,6 +213,7 @@ class FirstOrderNNPolicyOptimizer(PolicyOptimizer):
         )
 
         # Initiate autodiff.
+        self.policy.set_parameters(policy_params)
         self.policy.net.train()
         self.policy.net.zero_grad()
 
