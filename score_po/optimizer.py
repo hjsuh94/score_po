@@ -4,6 +4,7 @@ import numpy as np
 import torch
 import matplotlib.pyplot as plt
 
+from score_po.score_matching import ScoreFunctionEstimator
 
 class OptimizerParams:
     def __init__(self):
@@ -224,3 +225,41 @@ class FirstOrderNNPolicyOptimizer(PolicyOptimizer):
         cost_mean.backward()
 
         return self.policy.net.get_vectorized_gradients()
+
+class FirstOrderNNPolicyDRiskOptimizer(PolicyOptimizer):
+    """
+    First order optimizer when the policy is NN.
+    We need special treatment because of how we can't pass on autodiff to parameters
+    of the neural nets.
+    """
+
+    def __init__(self, params: PolicyOptimizerParams, sf: ScoreFunctionEstimator, beta):
+        super().__init__(params)
+        self.sf = sf
+        self.beta = beta
+        
+    def get_drisk_gradient(self, x0_batch):
+        raise NotImplementedError("not implemented yet.")
+
+    def get_policy_gradient(self, x0_batch):
+        """
+        Given x0_batch, obtain the policy gradients.
+        """
+        B = x0_batch.shape[0]
+        noise_trj_batch = torch.normal(
+            0, self.params.std, size=(B, self.params.T, self.ds.dim_u)
+        )
+
+        # Initiate autodiff.
+        self.policy.net.train()
+        self.policy.net.zero_grad()
+
+        torch.autograd.set_detect_anomaly(True)
+
+        cost_mean = torch.mean(self.evaluate_cost_batch(x0_batch, noise_trj_batch))
+        cost_mean.backward()
+        
+        value_gradients = self.policy.net.get_vectorized_gradients()
+        score_gradients = self.get_drisk_gradient()
+
+        return value_gradients + self.beta * score_gradients

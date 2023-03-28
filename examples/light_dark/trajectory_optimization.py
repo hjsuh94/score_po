@@ -7,18 +7,20 @@ import numpy as np
 import torch
 import matplotlib.pyplot as plt
 
-from score_po.optimizer import PolicyOptimizerParams, FirstOrderNNPolicyOptimizer
+from score_po.optimizer import (
+    PolicyOptimizerParams, FirstOrderNNPolicyOptimizer,
+    FirstOrderPolicyOptimizer)
 from score_po.dynamical_system import DynamicalSystem
 from score_po.costs import QuadraticCost
-from score_po.policy import NNPolicy
+from score_po.policy import NNPolicy, TimeVaryingOpenLoopPolicy
 from score_po.nn_architectures import MLP
 
 # 1. Set up parameters.
 params = PolicyOptimizerParams()
 params.T = 20
-params.x0_upper = torch.Tensor([0.5, 0.5])
-params.x0_lower = -torch.Tensor([0.5, 0.5])
-params.batch_size = 512
+params.x0_upper = torch.Tensor([0.3, 0.2])
+params.x0_lower = torch.Tensor([0.3, 0.2])
+params.batch_size = 1
 params.std = 1e-2
 params.lr = 1e-8
 params.max_iters = 100
@@ -48,14 +50,13 @@ cost = QuadraticCost(Q, R, Qd, xd)
 params.cost = cost
 
 # 3. Set up policy and initial guess.
-network = MLP(2, 2, [128, 128, 128])
-policy = NNPolicy(2, 2, network)
+policy = TimeVaryingOpenLoopPolicy(2, 2, params.T)
 params.policy = policy
 params.policy_params_0 = policy.get_parameters()
 
 # debug.
 # 4. Run the optimizer.
-optimizer = FirstOrderNNPolicyOptimizer(params)
+optimizer = FirstOrderPolicyOptimizer(params)
 optimizer.iterate()
 
 # 5. Run the policy.
