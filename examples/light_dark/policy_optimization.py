@@ -7,7 +7,8 @@ import numpy as np
 import torch
 import matplotlib.pyplot as plt
 
-from score_po.policy_optimizer import PolicyOptimizerParams, FirstOrderNNPolicyOptimizer
+from score_po.policy_optimizer import (
+    PolicyOptimizerParams, FirstOrderNNPolicyOptimizer)
 from score_po.dynamical_system import DynamicalSystem
 from score_po.costs import QuadraticCost
 from score_po.policy import NNPolicy

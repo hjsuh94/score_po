@@ -156,18 +156,15 @@ class PolicyOptimizer:
                     iter + 1, cost, time.time() - start_time
                 )
             )
-
-        if self.params.plot_iterations:
-            cost_history_np = self.cost_history.clone().detach().numpy()
-            plt.figure()
-            plt.plot(np.arange(self.params.max_iters), cost_history_np)
-            plt.xlabel("iterations")
-            plt.ylabel("cost")
-            plt.savefig("test.png")
-            plt.close()
-
-        return self.policy_history
-
+            
+    def plot_iterations(self):
+        cost_history_np = self.cost_history.clone().detach().numpy()
+        plt.figure()
+        plt.plot(np.arange(self.params.max_iters), cost_history_np)
+        plt.xlabel("iterations")
+        plt.ylabel("cost")
+        plt.show()
+        plt.close()
 
 class FirstOrderPolicyOptimizer(PolicyOptimizer):
     def __init__(self, params: PolicyOptimizerParams):
