@@ -30,6 +30,8 @@ class PolicyOptimizerParams:
         self.std = 1e-1  # noise injected on output of policy.
         self.lr = 1e-3  # learning rate for gradient descent of policy search.
         self.max_iters = 200
+        
+        self.plot_iterations = True
 
 
 class PolicyOptimizer:
@@ -79,18 +81,17 @@ class PolicyOptimizer:
             noise_trj_batch: (B, T, dim_u) noise output on the output of trajectory.
         """
         B = x0_batch.shape[0]
-        x_trj_batch = torch.zeros((B, self.params.T + 1, self.ds.dim_x))
-        u_trj_batch = torch.zeros((B, self.params.T, self.ds.dim_u))
-        x_trj_batch[:, 0, :] = x_trj_batch[:, 0, :] + x0_batch
+        x_trj_batch = torch.zeros((B, 0, self.ds.dim_x))
+        u_trj_batch = torch.zeros((B, 0, self.ds.dim_u))
+        x_trj_batch = torch.hstack((x_trj_batch, x0_batch[:,None,:]))
 
         for t in range(self.params.T):
-            u_trj_batch[:, t, :] = u_trj_batch[:, t, :] + (
-                self.policy.get_action_batch(x_trj_batch[:, t, :], t)
-                + noise_trj_batch[:, t, :]
-            )
-            x_trj_batch[:, t + 1, :] = x_trj_batch[
-                :, t + 1, :
-            ] + self.ds.dynamics_batch(x_trj_batch[:, t, :], u_trj_batch[:, t, :])
+            u_t_batch = self.policy.get_action_batch(
+                x_trj_batch[:, t, :], t) + noise_trj_batch[:, t, :]
+            u_trj_batch = torch.hstack((u_trj_batch, u_t_batch[:,None,:]))
+            x_next_batch = self.ds.dynamics_batch(
+                x_trj_batch[:, t, :], u_trj_batch[:, t, :])
+            x_trj_batch = torch.hstack((x_trj_batch, x_next_batch[:,None,:]))
 
         return x_trj_batch, u_trj_batch
 
@@ -159,11 +160,13 @@ class PolicyOptimizer:
             )
 
         if self.params.plot_iterations:
+            cost_history_np = self.cost_history.clone().detach().numpy()
             plt.figure()
-            plt.plot(np.arange(self.max_iters), self.cost_history)
+            plt.plot(np.arange(self.params.max_iters), cost_history_np)
             plt.xlabel("iterations")
             plt.ylabel("cost")
-            plt.show()
+            plt.savefig("test.png")
+            plt.close()
 
         return self.policy_history
 
