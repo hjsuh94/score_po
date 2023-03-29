@@ -1,3 +1,4 @@
+import abc
 import numpy as np
 import torch
 import torch.optim as optim
@@ -12,12 +13,13 @@ Classes for dynamical systems.
 """
 
 
-class DynamicalSystem:
+class DynamicalSystem(abc.ABC):
     def __init__(self, dim_x, dim_u):
         self.dim_x = dim_x
         self.dim_u = dim_u
         self.is_differentiable = False
 
+    @abc.abstractmethod
     def dynamics(self, x, u):
         """
         Evaluate dynamics in state-space form.
@@ -27,18 +29,17 @@ class DynamicalSystem:
         output:
             xnext of shape n
         """
-        raise NotImplementedError("Virtual.")
 
+    @abc.abstractmethod
     def dynamics_batch(self, x_batch, u_batch):
         """
         Evaluate dynamics in state-space form.
         input:
-            x of shape n
-            u of shape m
+            x of shape (batch_size, n)
+            u of shape (batch_size, m)
         output:
-            xnext of shape n
+            xnext of shape (batch_size, n)
         """
-        raise NotImplementedError("Virtual.")
 
 
 class NNDynamicalSystem(DynamicalSystem):
