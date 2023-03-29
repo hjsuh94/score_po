@@ -31,7 +31,7 @@ class PolicyOptimizerParams:
 
 
 class PolicyOptimizer:
-    def __init__(self, params: PolicyOptimizerParams):
+    def __init__(self, params: PolicyOptimizerParams, **kwargs):
         self.params = params
         self.cost = params.cost
         self.ds = params.dynamical_system
@@ -119,13 +119,19 @@ class PolicyOptimizer:
             )
         cost += self.cost.get_terminal_cost_batch(x_trj_batch[:, self.params.T, :])
         return cost
+    
+    def get_value_gradient(self, x0_batch, policy_params):
+        """
+        Obtain a batch of x0_batch and the currnet policy parameters,
+        obtain gradients of the cost w.r.t policy.        
+        """
+        raise NotImplementedError("this function is virtual.")
 
     def get_policy_gradient(self, x0_batch, policy_params):
         """
-        Given a batch of x0_batch and the current policy parameters,
-        obtain gradients of the policy.
+        By default, policy gradient equals value gradient. 
         """
-        raise NotImplementedError("This function is virtual.")
+        return self.get_value_gradient(x0_batch, policy_params)
 
     def iterate(self):
         zero_noise_trj = torch.zeros(
@@ -167,10 +173,10 @@ class PolicyOptimizer:
         plt.close()
 
 class FirstOrderPolicyOptimizer(PolicyOptimizer):
-    def __init__(self, params: PolicyOptimizerParams):
-        super().__init__(params)
+    def __init__(self, params: PolicyOptimizerParams, **kwargs):
+        super().__init__(params=params, **kwargs)
 
-    def get_policy_gradient(self, x0_batch, policy_params):
+    def get_value_gradient(self, x0_batch, policy_params):
         """
         Given x0_batch, obtain the policy gradients.
         """
@@ -197,10 +203,10 @@ class FirstOrderNNPolicyOptimizer(PolicyOptimizer):
     of the neural nets.
     """
 
-    def __init__(self, params: PolicyOptimizerParams):
-        super().__init__(params)
+    def __init__(self, params: PolicyOptimizerParams, **kwargs):
+        super().__init__(params=params, **kwargs)
 
-    def get_policy_gradient(self, x0_batch, policy_params):
+    def get_value_gradient(self, x0_batch, policy_params):
         """
         Given x0_batch, obtain the policy gradients.
         """
@@ -214,47 +220,137 @@ class FirstOrderNNPolicyOptimizer(PolicyOptimizer):
         self.policy.net.train()
         self.policy.net.zero_grad()
 
-        torch.autograd.set_detect_anomaly(True)
-
         cost_mean = torch.mean(self.evaluate_cost_batch(x0_batch, noise_trj_batch))
         cost_mean.backward()
 
         return self.policy.net.get_vectorized_gradients()
+    
+class DRiskPolicyOptimizer(PolicyOptimizer):
+    def __init__(self, params: PolicyOptimizerParams, 
+                 sf: ScoreFunctionEstimator, beta, **kwargs):
+        super().__init__(params=params, **kwargs)
+        self.beta = beta 
+        self.sf = sf
+        
+    def get_drisk_gradient(self, x0_batch, policy_params):
+        B = x0_batch.shape[0]
+        noise_trj_batch = torch.normal(
+            0, self.params.std, size=(B, self.params.T, self.ds.dim_u)
+        ) 
+        
+        # Initiate autodiff.
+        params = policy_params.clone()
+        params.requires_grad = True
+        self.policy.set_parameters(params)
+        
+        # Compute x_trj and u_trj batch.
+        x_trj_batch, u_trj_batch = self.rollout_policy_batch(
+            x0_batch, noise_trj_batch)
+        z_trj_batch = torch.cat((x_trj_batch[:,:-1,:], u_trj_batch), dim=2)
+        
+        # Collect and evaluate score functions.
+        sz_trj_batch = torch.zeros(
+            B, self.params.T, self.ds.dim_x + self.ds.dim_u)
+        
+        for t in range(self.params.T):
+            zt_batch = z_trj_batch[:,t,:]
+            sz_trj_batch[:,t,:] = self.sf.get_score_z_given_z(zt_batch, 0.1)
+        sz_trj_batch = sz_trj_batch.clone().detach()
+        
+        # Compose the score functions.
+        loss = torch.einsum(
+            'bti,bti->bt', z_trj_batch, sz_trj_batch).sum(dim=-1).mean(dim=0)
+        loss.backward()
+        
+        return -params.grad
+    
+    def get_policy_gradient(self, x0_batch, policy_params):
+        value_grad = self.get_value_gradient(x0_batch, policy_params)
+        drisk_grad = self.get_drisk_gradient(x0_batch, policy_params)
+        return value_grad + self.beta * drisk_grad
+        
 
-class FirstOrderNNPolicyDRiskOptimizer(PolicyOptimizer):
+    
+class DRiskNNPolicyOptimizer(PolicyOptimizer):
+    def __init__(self, params: PolicyOptimizerParams, 
+                 sf: ScoreFunctionEstimator, beta, **kwargs):
+        super().__init__(params=params, **kwargs)
+        self.beta = beta 
+        self.sf = sf
+        
+    def get_drisk_gradient(self, x0_batch, policy_params):
+        B = x0_batch.shape[0]
+        noise_trj_batch = torch.normal(
+            0, self.params.std, size=(B, self.params.T, self.ds.dim_u)
+        ) 
+        
+        self.policy.set_parameters(policy_params)
+        self.policy.net.train()
+        self.policy.net.zero_grad()
+        
+        # Compute x_trj and u_trj batch.
+        x_trj_batch, u_trj_batch = self.rollout_policy_batch(
+            x0_batch, noise_trj_batch)
+        z_trj_batch = torch.cat((x_trj_batch[:,:-1,:], u_trj_batch), dim=2)
+        
+        # Collect and evaluate score functions.
+        sz_trj_batch = torch.zeros(
+            B, self.params.T, self.ds.dim_x + self.ds.dim_u)
+        
+        for t in range(self.params.T):
+            zt_batch = z_trj_batch[:,t,:]
+            sz_trj_batch[:,t,:] = self.sf.get_score_z_given_z(zt_batch, 0.1)
+        sz_trj_batch = sz_trj_batch.clone().detach()
+        
+        # Compose the score functions.
+        loss = torch.einsum(
+            'bti,bti->bt', z_trj_batch, sz_trj_batch).sum(dim=-1).mean(dim=0)
+        loss.backward()
+        
+        return -self.policy.net.get_vectorized_gradients()
+    
+    def get_policy_gradient(self, x0_batch, policy_params):
+        value_grad = self.get_value_gradient(x0_batch, policy_params)
+        drisk_grad = self.get_drisk_gradient(x0_batch, policy_params)
+        return value_grad + self.beta * drisk_grad
+    
+class FirstOrderPolicyDRiskOptimizer(
+    FirstOrderPolicyOptimizer, DRiskPolicyOptimizer):
     """
     First order optimizer when the policy is NN.
     We need special treatment because of how we can't pass on autodiff to parameters
     of the neural nets.
     """
 
-    def __init__(self, params: PolicyOptimizerParams, sf: ScoreFunctionEstimator, beta):
-        super().__init__(params)
-        self.sf = sf
-        self.beta = beta
+    def __init__(self, params: PolicyOptimizerParams,
+                 sf: ScoreFunctionEstimator, beta: float):
+        super().__init__(params=params, sf=sf, beta=beta)
         
-    def get_drisk_gradient(self, x0_batch):
-        raise NotImplementedError("not implemented yet.")
-
-    def get_policy_gradient(self, x0_batch):
-        """
-        Given x0_batch, obtain the policy gradients.
-        """
-        B = x0_batch.shape[0]
-        noise_trj_batch = torch.normal(
-            0, self.params.std, size=(B, self.params.T, self.ds.dim_u)
-        )
-
-        # Initiate autodiff.
-        self.policy.net.train()
-        self.policy.net.zero_grad()
-
-        torch.autograd.set_detect_anomaly(True)
-
-        cost_mean = torch.mean(self.evaluate_cost_batch(x0_batch, noise_trj_batch))
-        cost_mean.backward()
+    def get_value_gradient(self, x0_batch, policy_params):
+        return FirstOrderPolicyOptimizer.get_value_gradient(
+            self, x0_batch, policy_params)
         
-        value_gradients = self.policy.net.get_vectorized_gradients()
-        score_gradients = self.get_drisk_gradient()
+    def get_policy_gradient(self, x0_batch, policy_params):
+        return DRiskPolicyOptimizer.get_policy_gradient(
+            self, x0_batch, policy_params)
 
-        return value_gradients + self.beta * score_gradients
+
+class FirstOrderNNPolicyDRiskOptimizer(
+    FirstOrderNNPolicyOptimizer, DRiskNNPolicyOptimizer):
+    """
+    First order optimizer when the policy is NN.
+    We need special treatment because of how we can't pass on autodiff to parameters
+    of the neural nets.
+    """
+
+    def __init__(self, params: PolicyOptimizerParams,
+                 sf: ScoreFunctionEstimator, beta: float):
+        super().__init__(params=params, sf=sf, beta=beta)
+        
+    def get_value_gradient(self, x0_batch, policy_params):
+        return FirstOrderNNPolicyOptimizer.get_value_gradient(
+            self, x0_batch, policy_params)
+        
+    def get_policy_gradient(self, x0_batch, policy_params):
+        return DRiskNNPolicyOptimizer.get_policy_gradient(
+            self, x0_batch, policy_params)
