@@ -76,8 +76,11 @@ class NNDynamicalSystem(DynamicalSystem):
             sigma: vector of dim_x + dim_u used for data augmentation.
         """
         B = data.shape[0]
-        noise = torch.normal(0, sigma, size=data.shape)
-        databar = data + noise
+        if sigma > 0:
+            noise = torch.normal(0, sigma, size=data.shape, device=data.device)
+            databar = data + noise
+        else:
+            databar = data
         pred = self.dynamics_batch(
             databar[:, : self.dim_x], databar[:, self.dim_x :], eval=False
         )  # B x dim_x
