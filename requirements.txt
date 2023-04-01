@@ -1,5 +1,6 @@
 torch
 pytest
 numpy
+scipy
 tqdm
 matplotlib
