@@ -2,8 +2,8 @@ import examples.cartpole.cartpole_plant as mut
 
 import numpy as np
 import pytest
-import scipy
 import torch
+from scipy import integrate
 
 
 class TestCartpolePlant:
@@ -34,5 +34,5 @@ class TestCartpolePlant:
                 x_val.reshape((1, -1)), u.reshape((1, -1))
             ).squeeze(0)
 
-        sol = scipy.integrate.solve_ivp(dyn, [0, dt], x)
+        sol = integrate.solve_ivp(dyn, [0, dt], x)
         np.testing.assert_allclose(sol.y[:, -1], xnext, atol=0.01)

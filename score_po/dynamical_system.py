@@ -2,12 +2,11 @@ import abc
 import numpy as np
 import torch
 import torch.optim as optim
+from torch.utils.data import TensorDataset
 from tqdm import tqdm
 
 from score_po.policy import Policy
 from score_po.nn import AdamOptimizerParams
-from score_po.dataset import Dataset, DynamicsDataset
-
 """
 Classes for dynamical systems. 
 """
@@ -68,7 +67,7 @@ class NNDynamicalSystem(DynamicalSystem):
         input = self.hstack((x_batch, u_batch))
         return self.net(input)
 
-    def evaluate_dynamic_loss(self, data, labels, sigma):
+    def evaluate_dynamic_loss(self, data, labels, sigma=0.0):
         """
         Evaluate L2 loss.
         data_samples:
@@ -85,26 +84,42 @@ class NNDynamicalSystem(DynamicalSystem):
         return loss
 
     def train_network(
-        self, dataset: DynamicsDataset, params: AdamOptimizerParams, sigma=0.0
+        self, dataset: TensorDataset, params: AdamOptimizerParams, sigma=0.0
     ):
         """
         Train a network given a dataset and optimization parameters.
-        Provides a
         """
         self.net.train()
         optimizer = optim.Adam(self.net.parameters(), params.lr)
         scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, params.iters)
-
+        
+        data_loader_train = torch.utils.data.DataLoader(
+            dataset, batch_size=params.batch_size
+        )
+        data_loader_eval = torch.utils.data.DataLoader(
+            dataset, batch_size=len(dataset)
+        )
+        
         loss_lst = torch.zeros(params.iters)
-
-        for iter in tqdm(range(params.iters)):
-            optimizer.zero_grad()
-            (data, label) = dataset.draw_from_dataset(params.batch_size)
-            loss = self.evaluate_dynamic_loss(data, label, sigma)
-            loss_lst[iter] = torch.clone(loss)[0].detach()
-            loss.backward()
-            optimizer.step()
-            scheduler.step()
+        
+        for epoch in tqdm(range(params.iters)):
+            for x_batch, u_batch, xnext_batch in data_loader_train:
+                loss = self.evaluate_dynamic_loss(
+                    torch.cat((x_batch, u_batch), dim=-1), 
+                    xnext_batch, sigma=sigma
+                )
+                optimizer.zero_grad()
+                loss.backward()
+                optimizer.step()
+                scheduler.step()
+                
+            with torch.no_grad():
+                for x_all, u_all, xnext_all in data_loader_eval:
+                    loss_eval = self.evaluate_dynamic_loss(
+                        torch.cat((x_all, u_all), dim=-1), xnext_all, sigma=0
+                    )
+                    loss_lst[epoch] = loss_eval.item()
+                print(f"epoch {epoch}, total loss {loss_eval.item()}")
 
         return loss_lst
 
