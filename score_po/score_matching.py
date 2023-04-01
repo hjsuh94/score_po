@@ -2,11 +2,11 @@ import numpy as np
 import torch
 import torch.optim as optim
 import torch.autograd as autograd
+from torch.utils.data import TensorDataset
 from tqdm import tqdm
 import matplotlib.pyplot as plt
 
 from score_po.nn import AdamOptimizerParams
-from score_po.dataset import Dataset
 
 
 class ScoreFunctionEstimator:
@@ -125,7 +125,7 @@ class ScoreFunctionEstimator:
 
     def train_network(
         self,
-        dataset: Dataset,
+        dataset: TensorDataset,
         params: AdamOptimizerParams,
         sigma_max=1,
         sigma_min=-3,
@@ -140,19 +140,33 @@ class ScoreFunctionEstimator:
         self.net.train()
         optimizer = optim.Adam(self.net.parameters(), params.lr)
         scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, params.iters)
+        
+        data_loader_train = torch.utils.data.DataLoader(
+            dataset, batch_size=params.batch_size
+        )
+        data_loader_eval = torch.utils.data.DataLoader(
+            dataset, batch_size=len(dataset)
+        )
 
         sigma_lst = np.geomspace(sigma_min, sigma_max, n_sigmas)
         loss_lst = torch.zeros(params.iters)
 
-        for iter in tqdm(range(params.iters)):
-            optimizer.zero_grad()
-            data_samples = dataset.draw_from_dataset(params.batch_size)
-            loss = self.evaluate_denoising_loss(data_samples, sigma_lst)
-            loss_lst[iter] = torch.clone(loss)[0].detach()
-            loss.backward()
-            optimizer.step()
-            scheduler.step()
-
+        for epoch in tqdm(range(params.iters)):
+            for z_batch in data_loader_train:
+                z_batch = z_batch[0]
+                loss = self.evaluate_denoising_loss(z_batch, sigma_lst)
+                optimizer.zero_grad()
+                loss.backward()
+                optimizer.step()
+                scheduler.step()
+                
+            with torch.no_grad():
+                for z_all in data_loader_eval:
+                    z_all = z_all[0]
+                    loss_eval = self.evaluate_denoising_loss(z_all, sigma_lst)
+                    loss_lst[epoch] = loss_eval.item()
+                print(f"epoch {epoch}, total loss {loss_eval.item()}")
+                
         return loss_lst
 
     def save_network_parameters(self, filename):
