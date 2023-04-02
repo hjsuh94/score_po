@@ -154,8 +154,8 @@ class ScoreFunctionEstimator:
         for epoch in tqdm(range(params.iters)):
             for z_batch in data_loader_train:
                 z_batch = z_batch[0]
-                loss = self.evaluate_denoising_loss(z_batch, sigma_lst)
                 optimizer.zero_grad()
+                loss = self.evaluate_denoising_loss(z_batch, sigma_lst)
                 loss.backward()
                 optimizer.step()
                 scheduler.step()

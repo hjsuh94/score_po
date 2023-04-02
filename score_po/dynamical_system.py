@@ -104,11 +104,11 @@ class NNDynamicalSystem(DynamicalSystem):
         
         for epoch in tqdm(range(params.iters)):
             for x_batch, u_batch, xnext_batch in data_loader_train:
+                optimizer.zero_grad()                
                 loss = self.evaluate_dynamic_loss(
                     torch.cat((x_batch, u_batch), dim=-1), 
                     xnext_batch, sigma=sigma
                 )
-                optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()
                 scheduler.step()

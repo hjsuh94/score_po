@@ -1,7 +1,10 @@
+import os
 import numpy as np
 import torch
 import torch.nn as nn
 import matplotlib.pyplot as plt
+
+from score_po.statistical_analysis import compute_mean, compute_variance_norm
 
 """
 List of architectures and parameters for NN training.
@@ -86,3 +89,59 @@ class MLP(nn.Module):
 
     def forward(self, x):
         return self.mlp(x)
+    
+    def save_network_parameters(self, filename):
+        torch.save(self.state_dict(), filename)
+
+    def load_network_parameters(self, filename):
+        self.load_state_dict(torch.load(filename))
+    
+
+
+class EnsembleNetwork(nn.Module):
+    def __init__(self, dim_in, dim_out, network_lst):
+        super().__init__()
+        
+        self.dim_in = dim_in
+        self.dim_out = dim_out
+        self.network_lst = network_lst
+        self.K = len(network_lst)
+        
+    def forward(self, x):
+        B = x.shape[0]
+        batch = torch.zeros((self.K, B, self.dim_out))
+        for k, network in enumerate(self.network_lst):
+            batch[k] = network(x)
+        return batch.mean(dim=0)
+    
+    def get_var(self, x):
+        B = x.shape[0]
+        batch = torch.zeros((self.K, B, self.dim_out))
+        for i, network in enumerate(self.network_lst):
+            batch[i,:] = network(x)
+            
+        mean = batch.mean(dim=0)
+        dev = batch - mean[None,:,:] # K x B x d_out
+        return (dev ** 2.0).sum(dim=2).mean(dim=0)
+    
+    def save_ensemble(self, foldername):
+        if not os.path.exists(foldername):
+            os.mkdir(foldername)
+        for k, network in enumerate(self.network_lst):
+            network.save_network_parameters(
+                os.path.join(foldername, "{:02d}.pth".format(k))
+            )
+
+    def load_ensemble(self, foldername):
+        for k, network in enumerate(self.network_lst):
+            network.load_network_parameters(
+                os.path.join(foldername, "{:02d}.pth".format(k))
+            )
+            
+    def get_var_gradients(self, x):
+        x = x.clone() # B x dim_x
+        x.requires_grad = True
+        
+        variance = self.get_var(x) # B x 1
+        variance.sum().backward()
+        return x.grad
