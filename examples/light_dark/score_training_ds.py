@@ -32,7 +32,7 @@ network = MLP(5, 4, [64, 64, 64, 64])
 
 params = AdamOptimizerParams()
 params.batch_size = 512
-params.iters = 1000
+params.epochs = 1000
 params.lr = 1e-3
 
 sf = ScoreFunctionEstimator(network, 2, 2)

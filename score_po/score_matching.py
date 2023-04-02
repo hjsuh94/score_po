@@ -139,7 +139,7 @@ class ScoreFunctionEstimator:
         """
         self.net.train()
         optimizer = optim.Adam(self.net.parameters(), params.lr)
-        scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, params.iters)
+        scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, params.epochs)
         
         data_loader_train = torch.utils.data.DataLoader(
             dataset, batch_size=params.batch_size
@@ -149,9 +149,9 @@ class ScoreFunctionEstimator:
         )
 
         sigma_lst = np.geomspace(sigma_min, sigma_max, n_sigmas)
-        loss_lst = torch.zeros(params.iters)
+        loss_lst = torch.zeros(params.epochs)
 
-        for epoch in tqdm(range(params.iters)):
+        for epoch in tqdm(range(params.epochs)):
             for z_batch in data_loader_train:
                 z_batch = z_batch[0]
                 loss = self.evaluate_denoising_loss(z_batch, sigma_lst)

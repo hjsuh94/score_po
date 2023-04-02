@@ -1,11 +1,13 @@
+from omegaconf import DictConfig, OmegaConf
+import os
 from typing import List, Tuple
 
+import hydra
 import numpy as np
 import torch
-from tqdm import tqdm
 
 from examples.cartpole.cartpole_plant import CartpolePlant, CartpoleNNDynamicalSystem
-from score_po.dynamical_system import AdamOptimizerParams
+from score_po.dynamical_system import NNDynamicalSystem
 
 
 def generate_data(
@@ -91,37 +93,64 @@ def generate_data(
     )
 
 
-def main():
-    device = "cuda"
-    dt = 0.05
+@hydra.main(config_path="./config", config_name="learn_model")
+def main(cfg: DictConfig):
+    torch.manual_seed(cfg.seed)
+    device = cfg.device
+    dt = cfg.nn_plant.dt
     # The bounds on the state and control are loose outer bounds of a trajectory that
-    # swings up the cart-pole, that trajectory is obtained from
+    # swings up the cart-pole, that swing-up trajectory is obtained from
     # Underactuated dircol.ipynb
     nn_plant = CartpoleNNDynamicalSystem(
-        hidden_widths=[16, 16, 8],
-        x_lo=torch.tensor([-2, -np.pi, -3, -12]),
-        x_up=torch.tensor([2, 1.5 * np.pi, 3, 12]),
-        u_lo=torch.tensor([-80.0]),
-        u_up=torch.tensor([80.0]),
+        hidden_layers=cfg.nn_plant.hidden_layers,
+        x_lo=torch.tensor([-1, -np.pi, -3, -12]),
+        x_up=torch.tensor([1, 1.5 * np.pi, 3, 12]),
+        u_lo=torch.tensor([-cfg.nn_plant.u_max]),
+        u_up=torch.tensor([cfg.nn_plant.u_max]),
         device=device,
     )
 
-    dataset = generate_data(
-        cart_length=0.5,
-        left_wall=-2.0,
-        right_wall=2.0,
-        theta_range=[nn_plant.x_lo[1].item(), nn_plant.x_up[1].item()],
-        cart_vel_range=[nn_plant.x_lo[2].item(), nn_plant.x_up[2].item()],
-        thetadot_range=[nn_plant.x_lo[3].item(), nn_plant.x_up[3].item()],
-        dt=dt,
-        u_max=80.0,
-        sample_size=100000,
-        device=device,
-    )
+    if cfg.dataset.load_filename is None:
+        dataset = generate_data(
+            cart_length=0.5,
+            left_wall=-2.0,
+            right_wall=2.0,
+            theta_range=[nn_plant.x_lo[1].item(), nn_plant.x_up[1].item()],
+            cart_vel_range=[nn_plant.x_lo[2].item(), nn_plant.x_up[2].item()],
+            thetadot_range=[nn_plant.x_lo[3].item(), nn_plant.x_up[3].item()],
+            dt=cfg.nn_plant.dt,
+            u_max=cfg.nn_plant.u_max,
+            sample_size=cfg.dataset.sample_size,
+            device=device,
+        )
+        if cfg.dataset.save_filename is not None:
+            save_path = (
+                os.path.dirname(os.path.abspath(__file__)) + cfg.dataset.save_filename
+            )
+            print(f"Save dataset to {save_path}.")
+            torch.save(dataset, save_path)
+    else:
+        load_path = (
+            os.path.dirname(os.path.abspath(__file__)) + cfg.dataset.load_filename
+        )
+        dataset = torch.load(load_path)
 
-    params = AdamOptimizerParams()
-    params.iters = 100
-    nn_plant.train_network(dataset, params, sigma=0.)
+    params = NNDynamicalSystem.TrainParams()
+    params.adam_params.lr = cfg.train.lr
+    params.adam_params.epochs = cfg.train.epochs
+    params.adam_params.batch_size = cfg.train.batch_size
+    params.wandb_params.enabled = cfg.train.wandb.enabled
+    params.wandb_params.project = cfg.train.wandb.project
+    params.wandb_params.entity = cfg.train.wandb.entity
+    params.data_split = [0.9, 0.1]
+    if cfg.train.save_ckpt is not None:
+        save_path = os.path.dirname(os.path.abspath(__file__)) + cfg.train.save_ckpt
+        print(f"Save dynamics network state dict to {save_path}")
+        params.save_best_model = save_path
+    if cfg.train.load_ckpt is not None:
+        load_path = os.path.dirname(os.path.abspath(__file__)) + cfg.train.load_ckpt
+        nn_plant.net.mlp.load_state_dict(torch.load(load_path))
+    nn_plant.train_network(dataset, params, sigma=0.0)
 
 
 if __name__ == "__main__":
