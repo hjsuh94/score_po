@@ -1,7 +1,10 @@
+from typing import List
+
 import numpy as np
 import torch
 
-from score_po.dynamical_system import DynamicalSystem
+from score_po.dynamical_system import DynamicalSystem, NNDynamicalSystem
+import score_po.nn
 
 
 class CartpolePlant(DynamicalSystem):
@@ -79,3 +82,60 @@ class CartpolePlant(DynamicalSystem):
                 ),
                 axis=-1,
             )
+
+
+class CartpoleNNDynamicalSystem(NNDynamicalSystem):
+    """
+    The neural network approximates the residual dynamics.
+    """
+
+    def __init__(
+        self,
+        hidden_widths: List[int],
+        x_lo: torch.Tensor,
+        x_up: torch.Tensor,
+        u_lo: torch.Tensor,
+        u_up: torch.Tensor,
+        device: str,
+    ):
+        """
+        Args:
+            x_lo, x_up, u_lo, u_up: (suggestive) bounds on state and control. We don't
+            clamp the state/control to lie within these range, but will use these
+            bounds to normalize the input to the network.
+        """
+        residual_net = score_po.nn.MLP(
+            dim_in=5,
+            dim_out=4,
+            hidden_layers=hidden_widths,
+            activation=torch.nn.LeakyReLU(),
+        ).to(device)
+        self.device = device
+        self.x_lo = x_lo.to(self.device)
+        self.x_up = x_up.to(self.device)
+        self.u_lo = u_lo.to(self.device)
+        self.u_up = u_up.to(self.device)
+
+        super().__init__(network=residual_net, dim_x=4, dim_u=1)
+
+    def dynamics(self, x: torch.Tensor, u: torch.Tensor, eval: bool = True):
+        return self.dynamics(x.unsqueeze(0), u.unsqueeze(0), eval).squeeze(0)
+
+    def dynamics_batch(
+        self, x_batch: torch.Tensor, u_batch: torch.Tensor, eval: bool = True
+    ):
+        if eval:
+            self.net.eval()
+        else:
+            self.net.train()
+
+        # We first normalize x and u.
+        # Our state and control can have very different magnitude. We can learn a more
+        # accurate model with normalized input.
+        x_normalized = (2 * x_batch - (self.x_lo + self.x_up)) / (self.x_up - self.x_lo)
+        u_normalized = (2 * u_batch - (self.u_lo + self.u_up)) / (self.u_up - self.u_lo)
+        xu_batch = torch.concat((x_normalized, u_normalized), dim=1)
+
+        # The network only predicts the residual dynamics
+        delta_x_batch = self.net(xu_batch)
+        return x_batch + delta_x_batch
