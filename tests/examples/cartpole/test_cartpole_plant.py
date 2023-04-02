@@ -41,13 +41,13 @@ class TestCartpolePlant:
 class TestCartpoleNNDynamicalSystem:
     @pytest.mark.parametrize("device", ("cpu", "cuda"))
     def test_constructor(self, device):
-        hidden_widths = [8, 4]
+        hidden_layers = [8, 4]
         x_lo = torch.tensor([-2, -1.0 * np.pi, -3, -10])
         x_up = torch.tensor([2, 1.5 * np.pi, 3, 10])
         u_lo = torch.tensor([-80.0])
         u_up = torch.tensor([80.0])
         dut = mut.CartpoleNNDynamicalSystem(
-            hidden_widths, x_lo, x_up, u_lo, u_up, device
+            hidden_layers, x_lo, x_up, u_lo, u_up, device
         )
         assert dut.net.mlp[0].weight.data.device.type == device
 
@@ -56,13 +56,13 @@ class TestCartpoleNNDynamicalSystem:
     @pytest.mark.parametrize("eval", (False, True))
     def test_dynamics_batch(self, device, eval):
         torch.manual_seed(123)
-        hidden_widths = [8, 4]
+        hidden_layers = [8, 4]
         x_lo = torch.tensor([-2, -1.0 * np.pi, -3, -10])
         x_up = torch.tensor([2, 1.5 * np.pi, 3, 10])
         u_lo = torch.tensor([-80.0])
         u_up = torch.tensor([80.0])
         dut = mut.CartpoleNNDynamicalSystem(
-            hidden_widths, x_lo, x_up, u_lo, u_up, device
+            hidden_layers, x_lo, x_up, u_lo, u_up, device
         )
 
         batch_size = 20

@@ -1,4 +1,5 @@
-from typing import List
+from dataclasses import dataclass
+from typing import List, Optional
 
 import numpy as np
 import torch
@@ -13,9 +14,15 @@ List of architectures and parameters for NN training.
 class AdamOptimizerParams:
     def __init__(self):
         self.lr = 1e-3
-        self.iters = 1000
+        self.epochs = 1000
         self.batch_size = 512
 
+
+@dataclass
+class WandbParams:
+    enabled: bool = False
+    project: Optional[str] = None
+    entity: Optional[str] = None
 
 class MLP(nn.Module):
     """
