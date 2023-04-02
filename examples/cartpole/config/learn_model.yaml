@@ -1,0 +1,22 @@
+device: "cuda"
+seed: 123
+nn_plant:
+  dt: 0.05
+  hidden_layers: [32, 16, 8]
+  u_max: 80
+
+dataset:
+  load_filename: null
+  sample_size: 1000000
+  save_filename: "/data/dynamics_dataset.pt"
+
+train:
+  wandb:
+    enabled: True
+    project: null
+    entity: null
+  lr: 1e-3
+  epochs: 100
+  batch_size: 1024
+  load_ckpt: null
+  save_ckpt: "/data/dynamics_nn.pt" 

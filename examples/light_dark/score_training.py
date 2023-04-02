@@ -29,7 +29,7 @@ network = MLP(3, 2, [64, 64, 64, 64])
 
 params = AdamOptimizerParams()
 params.batch_size = 512
-params.iters = 1000
+params.epochs = 1000
 params.lr = 1e-3
 params.step_lr = 500
 

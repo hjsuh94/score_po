@@ -91,7 +91,7 @@ class CartpoleNNDynamicalSystem(NNDynamicalSystem):
 
     def __init__(
         self,
-        hidden_widths: List[int],
+        hidden_layers: List[int],
         x_lo: torch.Tensor,
         x_up: torch.Tensor,
         u_lo: torch.Tensor,
@@ -107,7 +107,7 @@ class CartpoleNNDynamicalSystem(NNDynamicalSystem):
         residual_net = score_po.nn.MLP(
             dim_in=5,
             dim_out=4,
-            hidden_layers=hidden_widths,
+            hidden_layers=hidden_layers,
             activation=torch.nn.LeakyReLU(),
         ).to(device)
         self.device = device
