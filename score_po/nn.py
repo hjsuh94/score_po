@@ -9,11 +9,14 @@ from score_po.statistical_analysis import compute_mean, compute_variance_norm
 """
 List of architectures and parameters for NN training.
 """
+
+
 class AdamOptimizerParams:
     def __init__(self):
         self.lr = 1e-3
         self.iters = 1000
         self.batch_size = 512
+
 
 class MLP(nn.Module):
     """
@@ -28,6 +31,10 @@ class MLP(nn.Module):
 
     def __init__(self, dim_in, dim_out, hidden_layers):
         super().__init__()
+
+        self.dim_in = dim_in
+        self.dim_out = dim_out
+        self.hidden_layers = hidden_layers
 
         layers = []
         layers.append(nn.Linear(dim_in, hidden_layers[0]))
@@ -89,41 +96,40 @@ class MLP(nn.Module):
 
     def forward(self, x):
         return self.mlp(x)
-    
+
     def save_network_parameters(self, filename):
         torch.save(self.state_dict(), filename)
 
     def load_network_parameters(self, filename):
         self.load_state_dict(torch.load(filename))
-    
 
 
 class EnsembleNetwork(nn.Module):
     def __init__(self, dim_in, dim_out, network_lst):
         super().__init__()
-        
+
         self.dim_in = dim_in
         self.dim_out = dim_out
         self.network_lst = network_lst
         self.K = len(network_lst)
-        
+
     def forward(self, x):
         B = x.shape[0]
         batch = torch.zeros((self.K, B, self.dim_out))
         for k, network in enumerate(self.network_lst):
             batch[k] = network(x)
         return batch.mean(dim=0)
-    
+
     def get_var(self, x):
         B = x.shape[0]
         batch = torch.zeros((self.K, B, self.dim_out))
         for i, network in enumerate(self.network_lst):
-            batch[i,:] = network(x)
-            
+            batch[i, :] = network(x)
+
         mean = batch.mean(dim=0)
-        dev = batch - mean[None,:,:] # K x B x d_out
-        return (dev ** 2.0).sum(dim=2).mean(dim=0)
-    
+        dev = batch - mean[None, :, :]  # K x B x d_out
+        return (dev**2.0).sum(dim=2).mean(dim=0)
+
     def save_ensemble(self, foldername):
         if not os.path.exists(foldername):
             os.mkdir(foldername)
@@ -137,11 +143,11 @@ class EnsembleNetwork(nn.Module):
             network.load_network_parameters(
                 os.path.join(foldername, "{:02d}.pth".format(k))
             )
-            
+
     def get_var_gradients(self, x):
-        x = x.clone() # B x dim_x
+        x = x.clone()  # B x dim_x
         x.requires_grad = True
-        
-        variance = self.get_var(x) # B x 1
+
+        variance = self.get_var(x)  # B x 1
         variance.sum().backward()
         return x.grad
