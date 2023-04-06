@@ -1,12 +1,17 @@
 import abc
+from dataclasses import dataclass
+from typing import List, Optional, Tuple
+
 import numpy as np
 import torch
 import torch.optim as optim
 from torch.utils.data import TensorDataset
 from tqdm import tqdm
+import wandb
 
 from score_po.policy import Policy
-from score_po.nn import AdamOptimizerParams
+from score_po.nn import AdamOptimizerParams, WandbParams
+
 """
 Classes for dynamical systems. 
 """
@@ -75,51 +80,78 @@ class NNDynamicalSystem(DynamicalSystem):
             sigma: vector of dim_x + dim_u used for data augmentation.
         """
         B = data.shape[0]
-        noise = torch.normal(0, sigma, size=data.shape)
-        databar = data + noise
+        if sigma > 0:
+            noise = torch.normal(0, sigma, size=data.shape, device=data.device)
+            databar = data + noise
+        else:
+            databar = data
         pred = self.dynamics_batch(
             databar[:, : self.dim_x], databar[:, self.dim_x :], eval=False
         )  # B x dim_x
         loss = 0.5 * ((labels - pred) ** 2).sum(dim=-1).mean(dim=0)
         return loss
 
-    def train_network(
-        self, dataset: TensorDataset, params: AdamOptimizerParams, sigma=0.0
-    ):
+    @dataclass
+    class TrainParams:
+        adam_params: AdamOptimizerParams
+        wandb_params: WandbParams
+        dataset_split: Tuple[int] = (0.9, 0.1)
+        # Save the best model (with the smallest validation error to this path)
+        save_best_model: Optional[str] = None
+
+        def __init__(self):
+            self.adam_params = AdamOptimizerParams()
+            self.wandb_params = WandbParams()
+
+    def train_network(self, dataset: TensorDataset, params: TrainParams, sigma=0.0):
         """
         Train a network given a dataset and optimization parameters.
         """
+        if params.wandb_params.enabled:
+            wandb.init(
+                project=params.wandb_params.project, entity=params.wandb_params.entity
+            )
         self.net.train()
-        optimizer = optim.Adam(self.net.parameters(), params.lr)
-        scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, params.iters)
-        
+        optimizer = optim.Adam(self.net.parameters(), params.adam_params.lr)
+        scheduler = optim.lr_scheduler.CosineAnnealingLR(
+            optimizer, params.adam_params.epochs
+        )
+
+        train_dataset, val_dataset = torch.utils.data.random_split(
+            dataset, params.dataset_split
+        )
         data_loader_train = torch.utils.data.DataLoader(
-            dataset, batch_size=params.batch_size
+            train_dataset, batch_size=params.adam_params.batch_size
         )
         data_loader_eval = torch.utils.data.DataLoader(
-            dataset, batch_size=len(dataset)
+            val_dataset, batch_size=len(val_dataset)
         )
-        
-        loss_lst = torch.zeros(params.iters)
-        
-        for epoch in tqdm(range(params.iters)):
+
+        loss_lst = torch.zeros(params.adam_params.epochs)
+
+        best_loss = np.inf
+
+        for epoch in tqdm(range(params.adam_params.epochs)):
             for x_batch, u_batch, xnext_batch in data_loader_train:
                 optimizer.zero_grad()                
                 loss = self.evaluate_dynamic_loss(
-                    torch.cat((x_batch, u_batch), dim=-1), 
-                    xnext_batch, sigma=sigma
+                    torch.cat((x_batch, u_batch), dim=-1), xnext_batch, sigma=sigma
                 )
                 loss.backward()
                 optimizer.step()
                 scheduler.step()
-                
+
             with torch.no_grad():
                 for x_all, u_all, xnext_all in data_loader_eval:
                     loss_eval = self.evaluate_dynamic_loss(
                         torch.cat((x_all, u_all), dim=-1), xnext_all, sigma=0
                     )
                     loss_lst[epoch] = loss_eval.item()
-                print(f"epoch {epoch}, total loss {loss_eval.item()}")
+                if params.wandb_params.enabled:
+                    wandb.log({"total loss": loss_eval.item()}, step=epoch)
+                if params.save_best_model is not None and loss_eval.item() < best_loss:
+                    torch.save(self.net.mlp.state_dict(), params.save_best_model)
+                    best_loss = loss_eval.item()
 
         return loss_lst
 

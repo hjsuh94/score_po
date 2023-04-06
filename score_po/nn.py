@@ -1,4 +1,6 @@
-import os
+from dataclasses import dataclass
+from typing import List, Optional
+
 import numpy as np
 import torch
 import torch.nn as nn
@@ -14,8 +16,15 @@ List of architectures and parameters for NN training.
 class AdamOptimizerParams:
     def __init__(self):
         self.lr = 1e-3
-        self.iters = 1000
+        self.epochs = 1000
         self.batch_size = 512
+
+
+@dataclass
+class WandbParams:
+    enabled: bool = False
+    project: Optional[str] = None
+    entity: Optional[str] = None
 
 
 class MLP(nn.Module):
@@ -29,7 +38,13 @@ class MLP(nn.Module):
     makes MLP with two hidden layers with 128 width.
     """
 
-    def __init__(self, dim_in, dim_out, hidden_layers):
+    def __init__(
+        self,
+        dim_in: int,
+        dim_out: int,
+        hidden_layers: List[int],
+        activation: nn.Module = nn.ReLU(),
+    ):
         super().__init__()
 
         self.dim_in = dim_in
@@ -38,15 +53,15 @@ class MLP(nn.Module):
 
         layers = []
         layers.append(nn.Linear(dim_in, hidden_layers[0]))
-        layers.append(nn.ReLU())
+        layers.append(activation)
         for i in range(len(hidden_layers) - 1):
             layers.append(nn.Linear(hidden_layers[i], hidden_layers[i + 1]))
-            layers.append(nn.ReLU())
+            layers.append(activation)
         layers.append(nn.Linear(hidden_layers[-1], dim_out))
 
         self.mlp = nn.Sequential(*layers)
 
-    def get_vectorized_parameters(self):
+    def get_vectorized_parameters(self) -> torch.Tensor:
         """
         Get a vectorized representation of the parameters.
         """
@@ -57,7 +72,7 @@ class MLP(nn.Module):
                 params_vec = torch.hstack((params_vec, self.mlp[i].bias))
         return params_vec
 
-    def set_vectorized_parameters(self, params_vector):
+    def set_vectorized_parameters(self, params_vector: torch.Tensor):
         """
         Get a vectorized representation of the parameters.
         """
@@ -94,7 +109,7 @@ class MLP(nn.Module):
                 params_vec = torch.hstack((params_vec, self.mlp[i].bias.grad))
         return params_vec
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.mlp(x)
 
     def save_network_parameters(self, filename):

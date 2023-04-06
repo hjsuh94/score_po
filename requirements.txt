@@ -1,5 +1,8 @@
+hydra-core
 torch
 pytest
-numpy
-tqdm
 matplotlib
+numpy
+scipy
+tqdm
+wandb
