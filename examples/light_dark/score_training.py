@@ -27,11 +27,10 @@ dataset.add_to_dataset(pts)
 # Note that MLP input is 3 because dim_x:2, dim_u:0, sigma:0
 network = MLP(3, 2, [64, 64, 64, 64])
 
-params = AdamOptimizerParams()
-params.batch_size = 512
-params.epochs = 1000
-params.lr = 1e-3
-params.step_lr = 500
+params = ScoreFunctionEstimator.TrainParams()
+params.adam_params.batch_size = 512
+params.adam_params.epochs = 1000
+params.adam_params.lr = 1e-3
 
 sf = ScoreFunctionEstimator(network, 2, 0)
 loss_lst = sf.train_network(dataset, params, sigma_max=0.1, sigma_min=0.1, n_sigmas=1)

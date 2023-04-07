@@ -18,12 +18,6 @@ class AdamOptimizerParams:
         self.batch_size = 512
 
 
-@dataclass
-class WandbParams:
-    enabled: bool = False
-    project: Optional[str] = None
-    entity: Optional[str] = None
-
 class MLP(nn.Module):
     """
     Vanilla MLP with ReLU nonlinearity.

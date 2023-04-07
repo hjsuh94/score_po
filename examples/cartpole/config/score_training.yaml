@@ -7,22 +7,16 @@ hydra:
 
 device: "cuda"
 seed: 123
-nn_plant:
-  dt: 0.05
-  hidden_layers: [64, 64, 32]
-  u_max: 80
 
 dataset:
   load_path: ${user.dataset_load_path}
-  sample_size: 1000000
 
 train:
   wandb:
     enabled: ${user.wandb_enabled}
     project: score_po
-    name: ${now:%Y.%m.%d-%H.%M.%S}_acrobot
+    name: ${now:%Y.%m.%d-%H.%M.%S}_acrobot_score
     entity: ${user.wandb_entity}
   lr: 1e-3
   epochs: 500
   batch_size: 1024
-  load_ckpt: null

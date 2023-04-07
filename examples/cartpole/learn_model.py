@@ -5,6 +5,7 @@ from typing import List, Tuple
 import hydra
 import numpy as np
 import torch
+import wandb
 
 from examples.cartpole.cartpole_plant import CartpolePlant, CartpoleNNDynamicalSystem
 from score_po.dynamical_system import NNDynamicalSystem
@@ -86,6 +87,7 @@ def generate_data(
     admissible_flag = torch.logical_and(
         within_walls(x_samples), within_walls(xnext_samples)
     )
+    print(f"dataset has size {x_samples.shape[0]}")
     return torch.utils.data.TensorDataset(
         x_samples[admissible_flag],
         u_samples[admissible_flag],
@@ -97,7 +99,6 @@ def generate_data(
 def main(cfg: DictConfig):
     torch.manual_seed(cfg.seed)
     device = cfg.device
-    dt = cfg.nn_plant.dt
     # The bounds on the state and control are loose outer bounds of a trajectory that
     # swings up the cart-pole, that swing-up trajectory is obtained from
     # Underactuated dircol.ipynb
@@ -110,7 +111,7 @@ def main(cfg: DictConfig):
         device=device,
     )
 
-    if cfg.dataset.load_filename is None:
+    if cfg.dataset.load_path is None:
         dataset = generate_data(
             cart_length=0.5,
             left_wall=-2.0,
@@ -123,33 +124,38 @@ def main(cfg: DictConfig):
             sample_size=cfg.dataset.sample_size,
             device=device,
         )
-        if cfg.dataset.save_filename is not None:
-            save_path = (
-                os.path.dirname(os.path.abspath(__file__)) + cfg.dataset.save_filename
-            )
-            print(f"Save dataset to {save_path}.")
-            torch.save(dataset, save_path)
+        dataset_dir = os.path.join(os.getcwd(), "dataset")
+        if not os.path.exists(dataset_dir):
+            os.makedirs(dataset_dir)
+        dataset_save_path = os.path.join(dataset_dir, "dataset.pth")
+        print(f"Save dataset to {dataset_save_path}.")
+        torch.save(dataset, dataset_save_path)
     else:
-        load_path = (
-            os.path.dirname(os.path.abspath(__file__)) + cfg.dataset.load_filename
-        )
-        dataset = torch.load(load_path)
+        print(f"Load dataset {cfg.dataset.load_path}")
+        dataset = torch.load(cfg.dataset.load_path)
 
     params = NNDynamicalSystem.TrainParams()
+    if cfg.train.wandb.enabled:
+        wandb.init(
+            project=cfg.train.wandb.project,
+            name=cfg.train.wandb.name,
+            dir=os.getcwd(),
+            config=OmegaConf.to_container(cfg, resolve=True),
+            entity=cfg.train.wandb.entity
+        )
     params.adam_params.lr = cfg.train.lr
     params.adam_params.epochs = cfg.train.epochs
     params.adam_params.batch_size = cfg.train.batch_size
-    params.wandb_params.enabled = cfg.train.wandb.enabled
-    params.wandb_params.project = cfg.train.wandb.project
-    params.wandb_params.entity = cfg.train.wandb.entity
+    params.enable_wandb = cfg.train.wandb.enabled
     params.data_split = [0.9, 0.1]
-    if cfg.train.save_ckpt is not None:
-        save_path = os.path.dirname(os.path.abspath(__file__)) + cfg.train.save_ckpt
-        print(f"Save dynamics network state dict to {save_path}")
-        params.save_best_model = save_path
+    save_ckpt_dir = os.path.join(os.getcwd(), "checkpoint")
+    if not os.path.exists(save_ckpt_dir):
+        os.makedirs(save_ckpt_dir)
+    save_path = os.path.join(save_ckpt_dir, "dynamics_model.pth")
+    print(f"Save dynamics network state dict to {save_path}")
+    params.save_best_model = save_path
     if cfg.train.load_ckpt is not None:
-        load_path = os.path.dirname(os.path.abspath(__file__)) + cfg.train.load_ckpt
-        nn_plant.net.mlp.load_state_dict(torch.load(load_path))
+        nn_plant.net.mlp.load_state_dict(torch.load(cfg.train.load_ckpt))
     nn_plant.train_network(dataset, params, sigma=0.0)
 
 
