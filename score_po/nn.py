@@ -1,6 +1,6 @@
-from omegaconf import DictConfig
+from omegaconf import DictConfig, OmegaConf
 from dataclasses import dataclass
-from typing import List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 import os
 
 import numpy as np
@@ -28,7 +28,10 @@ class AdamOptimizerParams:
 class WandbParams:
     enabled: bool = False
     project: Optional[str] = None
+    name: Optional[str] = None
+    dir: Optional[str] = None
     entity: Optional[str] = None
+    config: Optional[Dict] = None
 
 
 @dataclass
@@ -51,6 +54,9 @@ class TrainParams:
         self.adam_params.lr = cfg.train.adam.lr
         self.wandb_params.enabled = cfg.train.wandb.enabled
         self.wandb_params.project = cfg.train.wandb.project
+        self.wandb_params.name = cfg.train.wandb.name
+        self.wandb_params.dir = cfg.train.wandb.dir
+        self.wandb_params.config = OmegaConf.to_container(cfg, resolve=True)
         self.wandb_params.entity = cfg.train.wandb.entity
 
         self.dataset_split = cfg.train.dataset_split
@@ -248,8 +254,16 @@ def train_network(
     loss_fn should have signature loss_fn(x_batch, net)
     """
     if params.wandb_params.enabled:
+        if params.wandb_params.dir is not None and not os.path.exists(
+            params.wandb_params.dir
+        ):
+            os.makedirs(params.wandb_params.dir, exist_ok=True)
         wandb.init(
-            project=params.wandb_params.project, entity=params.wandb_params.entity
+            project=params.wandb_params.project,
+            name=params.wandb_params.name,
+            dir=params.wandb_params.dir,
+            config=params.wandb_params.config,
+            entity=params.wandb_params.entity,
         )
 
     net.train()
@@ -276,6 +290,12 @@ def train_network(
     loss_lst = np.zeros(params.adam_params.epochs)
     best_loss = np.inf
 
+    if params.save_best_model is not None and not os.path.exists(
+        params.save_best_model
+    ):
+        os.makedirs(os.path.dirname(params.save_best_model), exist_ok=True)
+
+    training_loss = 0.
     for epoch in tqdm(range(params.adam_params.epochs)):
         for z_batch in data_loader_train:
             optimizer.zero_grad()
@@ -283,6 +303,8 @@ def train_network(
             loss.backward()
             optimizer.step()
             scheduler.step()
+            training_loss += loss.item() * z_batch.shape[0]
+        training_loss /= len(train_dataset)
 
         with torch.no_grad():
             for z_all in data_loader_eval:
@@ -290,7 +312,7 @@ def train_network(
                 loss_eval = loss_fn(z_batch, net)
                 loss_lst[epoch] = loss_eval.item()
             if params.wandb_params.enabled:
-                wandb.log({"total loss": loss_eval.item()}, step=epoch)
+                wandb.log({"training_loss": training_loss, "validation loss": loss_eval.item()}, step=epoch)
             if params.save_best_model is not None and loss_eval.item() < best_loss:
                 torch.save(net.mlp.state_dict(), params.save_best_model)
                 best_loss = loss_eval.item()
@@ -307,8 +329,16 @@ def train_network_sampling(
     sample_fn(batch_size) and return (batch_size, dim_data).
     """
     if params.wandb_params.enabled:
+        if params.wandb_params.dir is not None and not os.path.exists(
+            params.wandb_params.dir
+        ):
+            os.mkdir(params.wandb_params.dir)
         wandb.init(
-            project=params.wandb_params.project, entity=params.wandb_params.entity
+            project=params.wandb_params.project,
+            name=params.wandb_params.name,
+            dir=params.wandb_params.dir,
+            config=params.wandb_params.config,
+            entity=params.wandb_params.entity,
         )
 
     net.train()
@@ -319,6 +349,11 @@ def train_network_sampling(
 
     loss_lst = np.zeros(params.adam_params.epochs)
     best_loss = np.inf
+
+    if params.save_best_model is not None and not os.path.exists(
+        params.save_best_model
+    ):
+        os.mkdir(params.save_best_model)
 
     for epoch in tqdm(range(params.adam_params.epochs)):
         optimizer.zero_grad()

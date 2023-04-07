@@ -1,3 +1,10 @@
+defaults: 
+  - user: terry
+
+hydra:
+  run:
+    dir: ${user.run_dir}
+
 device: "cuda"
 
 N: 3 # data points.
@@ -26,6 +33,8 @@ train:
   wandb:
     enabled: True
     project: null
+    name: null
+    dir: null
     entity: null
   adam:
     lr: 1e-3
