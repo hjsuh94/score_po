@@ -5,9 +5,10 @@ from typing import List, Tuple
 import hydra
 import numpy as np
 import torch
+import wandb
 
 from examples.cartpole.cartpole_plant import CartpolePlant, CartpoleNNDynamicalSystem
-from score_po.dynamical_system import NNDynamicalSystem
+from score_po.nn import TrainParams
 
 
 def generate_data(
@@ -97,7 +98,6 @@ def generate_data(
 def main(cfg: DictConfig):
     torch.manual_seed(cfg.seed)
     device = cfg.device
-    dt = cfg.nn_plant.dt
     # The bounds on the state and control are loose outer bounds of a trajectory that
     # swings up the cart-pole, that swing-up trajectory is obtained from
     # Underactuated dircol.ipynb
@@ -110,7 +110,7 @@ def main(cfg: DictConfig):
         device=device,
     )
 
-    if cfg.dataset.load_filename is None:
+    if cfg.dataset.load_path is None:
         dataset = generate_data(
             cart_length=0.5,
             left_wall=-2.0,
@@ -123,27 +123,20 @@ def main(cfg: DictConfig):
             sample_size=cfg.dataset.sample_size,
             device=device,
         )
-        if cfg.dataset.save_filename is not None:
-            save_path = (
-                os.path.dirname(os.path.abspath(__file__)) + cfg.dataset.save_filename
-            )
-            print(f"Save dataset to {save_path}.")
-            torch.save(dataset, save_path)
+        dataset_dir = os.path.join(os.getcwd(), "dataset")
+        if not os.path.exists(dataset_dir):
+            os.makedirs(dataset_dir)
+        dataset_save_path = os.path.join(dataset_dir, "dataset.pth")
+        print(f"Save dataset to {dataset_save_path}.")
+        torch.save(dataset, dataset_save_path)
     else:
-        load_path = (
-            os.path.dirname(os.path.abspath(__file__)) + cfg.dataset.load_filename
-        )
-        dataset = torch.load(load_path)
+        print(f"Load dataset {cfg.dataset.load_path}")
+        dataset = torch.load(cfg.dataset.load_path)
 
-    params = NNDynamicalSystem.TrainParams()
+    params = TrainParams()
     params.load_from_config(cfg)
-    if cfg.train.save_ckpt is not None:
-        save_path = os.path.dirname(os.path.abspath(__file__)) + cfg.train.save_ckpt
-        print(f"Save dynamics network state dict to {save_path}")
-        params.save_best_model = save_path
     if cfg.train.load_ckpt is not None:
-        load_path = os.path.dirname(os.path.abspath(__file__)) + cfg.train.load_ckpt
-        nn_plant.net.mlp.load_state_dict(torch.load(load_path))
+        nn_plant.net.mlp.load_state_dict(torch.load(cfg.train.load_ckpt))
     nn_plant.train_network(dataset, params, sigma=0.0)
 
 

@@ -1,0 +1,6 @@
+run_dir: /home/hongkaidai/score_po_data/acrobot/${now:%Y-%m-%d}/${now:%H-%M-%S}
+
+dataset_load_path: /home/hongkaidai/score_po_data/acrobot/dataset.pth
+
+wandb_enabled: True
+wandb_entity: daihongkai
