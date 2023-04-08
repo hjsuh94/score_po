@@ -83,7 +83,7 @@ class DataDistanceEstimator:
     def check_input_consistency(self):
         if self.net.dim_in is not self.dim_x:
             raise ValueError("Inconsistent input size of neural network.")
-        if self.net.dim_out is not 1:
+        if self.net.dim_out != 1:
             raise ValueError("Inconsistent output size of neural network.")
 
     def sample_from_domain(self, batch_size):
@@ -98,7 +98,7 @@ class DataDistanceEstimator:
             self.net.train()
 
         return self.net(x_batch)
-    
+
     def get_energy_gradients(self, x_batch):
         """
         Given x, compute distance to data.
@@ -131,11 +131,11 @@ class DataDistanceEstimator:
         """
         dst = DataDistance(dataset, self.metric)
         loss_fn = lambda x_batch, net: self.evaluate_loss(x_batch, dst, mode)
-        loss_lst = train_network_sampling(self.net, params,
-                               self.sample_from_domain,
-                               loss_fn, split=False)
+        loss_lst = train_network_sampling(
+            self.net, params, self.sample_from_domain, loss_fn, split=False
+        )
         return loss_lst
-    
+
     def save_network_parameters(self, filename):
         torch.save(self.net.state_dict(), filename)
 
