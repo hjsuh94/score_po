@@ -1,12 +1,19 @@
 import numpy as np
+import matplotlib.pyplot as plt
+
 import torch
 import torch.optim as optim
 import torch.autograd as autograd
 from torch.utils.data import TensorDataset
 from tqdm import tqdm
-import matplotlib.pyplot as plt
 
-from score_po.nn import AdamOptimizerParams
+import wandb
+
+from score_po.nn import AdamOptimizerParams, TrainParams, train_network
+
+"""
+Classes for training score functions.
+"""
 
 
 class ScoreEstimator:
@@ -35,6 +42,7 @@ class ScoreEstimator:
             raise ValueError("Inconsistent output size of neural network.")
 
     def get_score_z_given_z(self, input, eval=True):
+        self.net.to(input.device)
         if eval:
             self.net.eval()
         else:
@@ -59,7 +67,7 @@ class ScoreEstimator:
         z = torch.hstack((x, u))
         return self.get_score_x_given_z(z, eval)
 
-    def get_score_x_given_xu(self, x, u, eval=True):
+    def get_score_u_given_xu(self, x, u, eval=True):
         z = torch.hstack((x, u))
         return self.get_score_u_given_z(z, eval)
 
@@ -71,6 +79,7 @@ class ScoreEstimator:
         Adopted from Song's codebase.
         """
         databar = data + torch.randn_like(data) * sigma
+
         target = -1 / (sigma**2) * (databar - data)
         scores = self.get_score_z_given_z(databar, eval=False)
 
@@ -120,39 +129,13 @@ class ScoreEstimator:
         params: TrainParams,
         sigma,
         mode="denoising",
+        split=True,
     ):
         """
         Train a network given a dataset and optimization parameters.
         """
-        self.net.train()
-        self.sigma = sigma  # reset sigma to be the trained parameter.
-
-        optimizer = optim.Adam(self.net.parameters(), params.lr)
-        scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, params.iters)
-
-        data_loader_train = torch.utils.data.DataLoader(
-            dataset, batch_size=params.batch_size
-        )
-        data_loader_eval = torch.utils.data.DataLoader(dataset, batch_size=len(dataset))
-
-        loss_lst = torch.zeros(params.iters)
-
-        for epoch in tqdm(range(params.iters)):
-            for z_batch in data_loader_train:
-                z_batch = z_batch[0]
-                optimizer.zero_grad()
-                loss = self.evaluate_loss(z_batch, sigma, mode)
-                loss.backward()
-                optimizer.step()
-                scheduler.step()
-
-            with torch.no_grad():
-                for z_all in data_loader_eval:
-                    z_all = z_all[0]
-                    loss_eval = self.evaluate_loss(z_all, sigma, mode)
-                    loss_lst[epoch] = loss_eval.item()
-                print(f"epoch {epoch}, total loss {loss_eval.item()}")
-
+        loss_fn = lambda x_batch, net: self.evaluate_loss(x_batch, sigma, mode)
+        loss_lst = train_network(self.net, params, dataset, loss_fn, split)
         return loss_lst
 
     def save_network_parameters(self, filename):

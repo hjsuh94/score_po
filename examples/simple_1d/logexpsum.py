@@ -13,8 +13,6 @@ y2 = (x + 1) ** 2.0
 
 z1 = np.stack((y1, y2))
 
-print(z1.shape)
-
 z_min = np.min(z1, axis=0)
 z_softmin = -logsumexp(-z1, axis=0)
 

@@ -10,7 +10,7 @@ from tqdm import tqdm
 import wandb
 
 from score_po.policy import Policy
-from score_po.nn import AdamOptimizerParams, WandbParams
+from score_po.nn import AdamOptimizerParams, WandbParams, TrainParams
 
 """
 Classes for dynamical systems. 
@@ -91,18 +91,6 @@ class NNDynamicalSystem(DynamicalSystem):
         loss = 0.5 * ((labels - pred) ** 2).sum(dim=-1).mean(dim=0)
         return loss
 
-    @dataclass
-    class TrainParams:
-        adam_params: AdamOptimizerParams
-        wandb_params: WandbParams
-        dataset_split: Tuple[int] = (0.9, 0.1)
-        # Save the best model (with the smallest validation error to this path)
-        save_best_model: Optional[str] = None
-
-        def __init__(self):
-            self.adam_params = AdamOptimizerParams()
-            self.wandb_params = WandbParams()
-
     def train_network(self, dataset: TensorDataset, params: TrainParams, sigma=0.0):
         """
         Train a network given a dataset and optimization parameters.
@@ -133,7 +121,7 @@ class NNDynamicalSystem(DynamicalSystem):
 
         for epoch in tqdm(range(params.adam_params.epochs)):
             for x_batch, u_batch, xnext_batch in data_loader_train:
-                optimizer.zero_grad()                
+                optimizer.zero_grad()
                 loss = self.evaluate_dynamic_loss(
                     torch.cat((x_batch, u_batch), dim=-1), xnext_batch, sigma=sigma
                 )

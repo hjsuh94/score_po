@@ -136,13 +136,7 @@ def main(cfg: DictConfig):
         dataset = torch.load(load_path)
 
     params = NNDynamicalSystem.TrainParams()
-    params.adam_params.lr = cfg.train.lr
-    params.adam_params.epochs = cfg.train.epochs
-    params.adam_params.batch_size = cfg.train.batch_size
-    params.wandb_params.enabled = cfg.train.wandb.enabled
-    params.wandb_params.project = cfg.train.wandb.project
-    params.wandb_params.entity = cfg.train.wandb.entity
-    params.data_split = [0.9, 0.1]
+    params.load_from_config(cfg)
     if cfg.train.save_ckpt is not None:
         save_path = os.path.dirname(os.path.abspath(__file__)) + cfg.train.save_ckpt
         print(f"Save dynamics network state dict to {save_path}")

@@ -1,0 +1,37 @@
+device: "cuda"
+
+N: 3 # data points.
+x_range: 2.0 # range to query. [-x_range, x_range]
+n_grid: 10000 # number of grid spots to plot.
+sigma: 0.1 # perturbation std.
+ensemble_size: 3
+
+# Candidates: 51, 123, 48, 321
+seed: 321
+# Plotting scale.
+scale_gp: 3.0
+scale_ensemble: 40.0
+scale_softmin: 0.4
+
+scale_ensemble_plot: 100.0
+scale_gp_plot: 8.0
+
+ylim_top: 5
+ylim_bottom: -4
+
+
+nn_layers: [512, 512]
+
+train:
+  wandb:
+    enabled: True
+    project: null
+    entity: null
+  adam:
+    lr: 1e-3
+    epochs: 1000
+    batch_size: 32
+  device: "cuda"
+  save_best_model: null
+  dataset_split: null
+
