@@ -35,6 +35,29 @@ class TestDataDistance:
         np.testing.assert_allclose(quadratic, quadratic_mut, rtol=1e-3)
 
     @pytest.mark.parametrize("device", ("cpu", "cuda"))
+    def test_multidimensional_pairwise_energy(self, device):
+        data = torch.rand(5, 3, 2, 5).to(device)
+        sigma = 0.2
+        x_batch = torch.rand(3, 3, 2, 5).to(device)
+
+        # Manually compute quadratic energy.
+        quadratic = torch.zeros((3, 5)).to(device)
+        for b in range(x_batch.shape[0]):
+            for d in range(data.shape[0]):
+                quadratic[b, d] = (
+                    0.5 * torch.linalg.norm((data[d] - x_batch[b]) / sigma) ** 2
+                )
+        quadratic = quadratic.detach().cpu().numpy()
+
+        # Compute quadratic by mut.
+        dataset = TensorDataset(data)
+        metric = torch.ones(3, 2, 5).to(device) / (sigma**2.0)
+        dst = mut.DataDistance(dataset, metric)
+        quadratic_mut = dst.get_pairwise_energy(x_batch).detach().cpu().numpy()
+
+        np.testing.assert_allclose(quadratic, quadratic_mut, rtol=1e-3)
+
+    @pytest.mark.parametrize("device", ("cpu", "cuda"))
     def test_energy_to_data(self, device):
         # Generate some arbitary data.
         data = torch.rand(5, 3).to(device)
@@ -61,6 +84,33 @@ class TestDataDistance:
         np.testing.assert_allclose(truemin, truemin_mut, rtol=1e-3)
 
     @pytest.mark.parametrize("device", ("cpu", "cuda"))
+    def test_multidimensional_energy_to_data(self, device):
+        data = torch.rand(5, 3, 2, 5).to(device)
+        sigma = 0.2
+        x_batch = torch.rand(3, 3, 2, 5).to(device)
+
+        # Manually compute quadratic energy.
+        quadratic = torch.zeros((3, 5)).to(device)
+        for b in range(x_batch.shape[0]):
+            for d in range(data.shape[0]):
+                quadratic[b, d] = (
+                    0.5 * torch.linalg.norm((data[d] - x_batch[b]) / sigma) ** 2
+                )
+        softmin = -torch.logsumexp(-quadratic, 1).cpu().numpy()
+        truemin, _ = torch.min(quadratic, 1)
+        truemin = truemin.cpu().numpy()
+
+        # Compute minimum by mut.
+        dataset = TensorDataset(data)
+        metric = torch.ones(3, 2, 5) / (sigma**2.0)
+        dst = mut.DataDistance(dataset, metric)
+        softmin_mut = dst.get_energy_to_data(x_batch).cpu().numpy()
+        truemin_mut = dst.get_energy_to_data(x_batch, mode="min").cpu().numpy()
+
+        np.testing.assert_allclose(softmin, softmin_mut, rtol=1e-3)
+        np.testing.assert_allclose(truemin, truemin_mut, rtol=1e-3)
+
+    @pytest.mark.parametrize("device", ("cpu", "cuda"))
     def test_energy_gradients(self, device):
         # TODO(terry-suh): it's desirable to check against manual computations.
         # Generate some arbitary data.
@@ -73,6 +123,18 @@ class TestDataDistance:
         dst = mut.DataDistance(dataset, metric)
         grads = dst.get_energy_gradients(x_batch).cpu()
         np.testing.assert_equal(grads.shape, torch.Size([20, 3]))
+
+    @pytest.mark.parametrize("device", ("cpu", "cuda"))
+    def test_multidimensional_energy_to_data(self, device):
+        data = torch.rand(5, 3, 2, 5).to(device)
+        sigma = 0.2
+        x_batch = torch.rand(3, 3, 2, 5).to(device)
+
+        dataset = TensorDataset(data)
+        metric = torch.ones(3, 2, 5) / (sigma**2.0)
+        dst = mut.DataDistance(dataset, metric)
+        grads = dst.get_energy_gradients(x_batch).cpu()
+        np.testing.assert_equal(grads.shape, torch.Size([3, 3, 2, 5]))
 
 
 class TestDataDistanceEstimator:
@@ -123,3 +185,7 @@ class TestDataDistanceEstimator:
         data_tensor = torch.rand(100, 1)
         dataset = torch.utils.data.TensorDataset(data_tensor)
         dde.train_network(dataset, params, mode)
+
+
+a = TestDataDistance()
+a.test_pairwise_energy("cpu")

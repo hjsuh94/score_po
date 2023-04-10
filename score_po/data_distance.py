@@ -15,10 +15,15 @@ class DataDistance:
         """
         This class contains functionalities to compute data from some queried
         point x to all the coordinates within the dataset.
+
+        datset: TensorDataset consisted of tensors.
+        metric: a metric to enforce on two data, with size dim_x. The distance
+        is evaluated based on the metric using the following formula:
+        \|x - y\| = \sum_i metric_i * (x_i - y_i)^2.
         """
         self.dataset = dataset
         self.metric = metric
-        self.metric_mat = torch.diag(metric)
+        self.dim_x = self.metric.shape  # torch.size
         self.data_tensor = self.dataset_to_tensor(self.dataset)
         self.data_size = len(dataset)
         self.dim_data = self.data_tensor.shape[1]
@@ -27,6 +32,13 @@ class DataDistance:
         """Return tensorized form of data as B x dim_data"""
         return dataset.tensors[0]
 
+    def get_einsum_string(self, length):
+        """Get einsum string of specific length."""
+        string = "ijklmnopqrstuvwxyz"
+        if length > len(string):
+            raise ValueError("dimension is larger than supported.")
+        return string[:length]
+
     def get_pairwise_energy(self, x_batch):
         """
         Given x_batch of shape (B, dim_data) and dataset tensor (D, dim_data),
@@ -34,10 +46,13 @@ class DataDistance:
         0.5 * (x_b - x_d)^T @ metric @ (x_b - x_d)
         """
         # B x D x n
-        pairwise_dist = x_batch[:, None, :] - self.data_tensor[None, :, :]
+        pairwise_dist = x_batch.unsqueeze(1) - self.data_tensor.unsqueeze(0)
+        self.metric = self.metric.to(x_batch.device)
+        e_str = self.get_einsum_string(len(self.dim_x))
 
+        summation_string = "bd" + e_str + "," + e_str + "," + "bd" + e_str + "->bd"
         pairwise_quadratic = 0.5 * torch.einsum(
-            "bdi,ii,bdi->bd", pairwise_dist, self.metric_mat, pairwise_dist
+            summation_string, pairwise_dist, self.metric, pairwise_dist
         )
         return pairwise_quadratic
 
@@ -46,8 +61,6 @@ class DataDistance:
         Given x_batch, compute softmin distance to data.
         """
         B = x_batch.shape[0]
-        device = x_batch.device
-        self.metric_mat = self.metric_mat.to(device)
         pairwise_energy = self.get_pairwise_energy(x_batch)
         if mode == "softmin":
             return -torch.logsumexp(-pairwise_energy, 1)

@@ -73,7 +73,7 @@ class ScoreEstimator:
 
     def evaluate_denoising_loss_with_sigma(self, data, sigma):
         """
-        Evaluate denoising loss, Eq.(5) from Song & Ermon.
+        Evaluate denoising loss, Eq.(2) from Song & Ermon 2019.
             data of shape (B, dim_x + dim_u)
             sigma, a scalar variable.
         Adopted from Song's codebase.
@@ -91,9 +91,10 @@ class ScoreEstimator:
 
     def evaluate_slicing_loss_with_sigma(self, data, sigma):
         """
-        Evaluate denoising loss, Eq.(5) from Song & Ermon.
+        Evaluate denoising loss, Eq.(3) from Song & Ermon 2019.
             data of shape (B, dim_x + dim_u)
             sigma, a scalar variable.
+        Adopted from Song's codebase.
         """
         databar = data + torch.randn_like(data) * sigma
         databar.requires_grad = True
@@ -134,7 +135,8 @@ class ScoreEstimator:
         """
         Train a network given a dataset and optimization parameters.
         """
-        loss_fn = lambda x_batch, net: self.evaluate_loss(x_batch, sigma, mode)
+        # NOTE: We use x_batch[0] here since dataloader gives a tuple (x_batch,).
+        loss_fn = lambda x_batch, net: self.evaluate_loss(x_batch[0], sigma, mode)
         loss_lst = train_network(self.net, params, dataset, loss_fn, split)
         return loss_lst
 
