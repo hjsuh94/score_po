@@ -31,18 +31,18 @@ def get_ensembles(x, data, cfg):
     network_lst = []
     criterion = nn.MSELoss()
 
-    loss_fn = lambda x_batch, net: criterion(net(x_batch), label)
+    loss_fn = lambda x_batch, net: criterion(net(x_batch[0]), label)
 
     for i in tqdm(range(cfg.ensemble_size)):
         net = MLP(1, 1, cfg.nn_layers)
         train_network(net, params, dataset, loss_fn, split=False)
         network_lst.append(net)
 
-    ensemble = EnsembleNetwork(1, 1, network_lst)
+    ensemble = EnsembleNetwork((1,), (1,), network_lst)
 
     x_tensor = torch.Tensor(x).reshape(-1, 1)
     z = ensemble(x_tensor).detach().numpy()[:, 0]
-    std = np.sqrt(ensemble.get_var(x_tensor).detach().numpy())
+    std = np.sqrt(ensemble.get_variance(x_tensor).detach().numpy())
     return z, std
 
 
