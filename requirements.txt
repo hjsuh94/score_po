@@ -6,3 +6,5 @@ numpy
 scipy
 tqdm
 wandb
+sklearn
+omegaconf

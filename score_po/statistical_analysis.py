@@ -1,4 +1,4 @@
-import numpy as np
+import torch
 
 
 def compute_mean(x):
@@ -7,7 +7,7 @@ def compute_mean(x):
     args: x of shape (B,n), batch of samples.
     """
     B = x.shape[0]
-    return np.sum(x, axis=0) / B
+    return torch.sum(x, axis=0) / B
 
 
 def compute_covariance_norm(x, p=2):
@@ -18,12 +18,12 @@ def compute_covariance_norm(x, p=2):
     """
     B = x.shape[0]
     mu = compute_mean(x)
-    deviations = np.subtract(x, mu)  # B x n
-    covariance = np.zeros((x.shape[1], x.shape[1]))
+    deviations = torch.subtract(x, mu)  # B x n
+    covariance = torch.zeros((x.shape[1], x.shape[1]))
     for i in range(B):
-        covariance += np.outer(deviations[i], deviations[i])
+        covariance += torch.outer(deviations[i], deviations[i])
     covariance /= B - 1
-    return np.linalg.norm(covariance, p)  # / x.shape[1])
+    return torch.linalg.norm(covariance, p)  # / x.shape[1])
 
 
 def compute_variance_norm(x, p=2):
@@ -36,10 +36,10 @@ def compute_variance_norm(x, p=2):
     """
     B = x.shape[0]
     mu = compute_mean(x)
-    deviations = np.subtract(x, mu)  # B x n
+    deviations = torch.subtract(x, mu)  # B x n
     covariance = 0.0
     for i in range(B):
-        covariance += np.linalg.norm(deviations[i]) ** 2.0
+        covariance += torch.norm(deviations[i]) ** 2.0
     return covariance / (B - 1)
 
 
@@ -53,11 +53,11 @@ def compute_confidence_interval_roots(mu, sigma, N, L, delta):
     # Compute coefficients of the quadratic inequality.
     # a * eps^2 + b * eps + c >= 0.
     a = N / 2
-    b = L / 3 * np.log((1 - delta) / (d + 1))
-    c = sigma * np.log((1 - delta) / (d + 1))
+    b = L / 3 * torch.log((1 - delta) / (d + 1))
+    c = sigma * torch.log((1 - delta) / (d + 1))
 
     # Compute the determinant.
-    return np.roots(np.array([a, b, c]))
+    return torch.roots(torch.array([a, b, c]))
 
 
 def compute_confidence_interval(mu, sigma, N, L, delta):
@@ -68,8 +68,8 @@ def compute_confidence_interval(mu, sigma, N, L, delta):
     d = len(mu)  # dimension of the problem.
 
     # Compute coefficients of the quadratic inequality.
-    ft = np.sqrt((2 * sigma * np.log((d + 1) / delta)) / N)
-    st = 2 * L / (3 * N) * np.log((d + 1) / delta)
+    ft = torch.sqrt((2 * sigma * torch.log((d + 1) / delta)) / N)
+    st = 2 * L / (3 * N) * torch.log((d + 1) / delta)
     # Compute the determinant.
     return ft + st
 
@@ -83,7 +83,7 @@ def compute_confidence_probability(d, sigma, N, L, eps):
     # a * eps^2 + b * eps + c >= 0.
     numer = -(eps**2.0) * N / 2
     denom = sigma**2.0 + L * eps / 3
-    p = (d + 1) * np.exp(numer / denom)
+    p = (d + 1) * torch.exp(numer / denom)
 
     # Compute the determinant.
     return p

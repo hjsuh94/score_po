@@ -15,8 +15,10 @@ train:
     enabled: True
     project: null
     entity: null
-  lr: 1e-3
-  epochs: 100
-  batch_size: 1024
+  adam:
+    lr: 1e-3
+    epochs: 100
+    batch_size: 1024
   load_ckpt: null
   save_ckpt: "/data/dynamics_nn.pt" 
+  device: "cuda"
