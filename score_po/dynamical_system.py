@@ -1,5 +1,6 @@
 import abc
 from dataclasses import dataclass
+import os
 from typing import List, Optional, Tuple
 
 import numpy as np
@@ -106,6 +107,9 @@ class NNDynamicalSystem(DynamicalSystem):
         return score_po.nn.train_network(self.net, params, dataset, loss, split=True)
 
     def save_network_parameters(self, filename):
+        file_dir = os.path.dirname(filename)
+        if not os.path.exists(file_dir):
+            os.makedirs(file_dir, exist_ok=True)
         torch.save(self.net.state_dict(), filename)
 
     def load_network_parameters(self, filename):

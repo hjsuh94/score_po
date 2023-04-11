@@ -34,7 +34,7 @@ def main(cfg: DictConfig):
     save_path = os.path.join(save_ckpt_dir, "score_network.pth")
     params.save_best_model = save_path
 
-    # This dataset stores x and u separately. ScoreFunctionEstimator needs z = (x, u) so we process the dataset here.
+    # This dataset stores x and u separately. ScoreEstimator needs z = (x, u) so we process the dataset here.
     x_data = dataset.tensors[0]
     u_data = dataset.tensors[1]
     z_data = torch.cat((x_data, u_data), dim=-1)

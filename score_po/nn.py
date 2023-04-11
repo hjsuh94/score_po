@@ -33,6 +33,15 @@ class WandbParams:
     entity: Optional[str] = None
     config: Optional[Dict] = None
 
+    def load_from_config(self, cfg: DictConfig, field: str):
+        self.enabled = cfg[field].wandb.enabled
+        self.project = cfg[field].wandb.project
+        self.name = cfg[field].wandb.name
+        self.dir = cfg[field].wandb.dir
+        self.config = OmegaConf.to_container(cfg, resolve=True)
+        self.entity = cfg[field].wandb.entity
+
+
 
 @dataclass
 class TrainParams:
@@ -52,12 +61,7 @@ class TrainParams:
         self.adam_params.batch_size = cfg.train.adam.batch_size
         self.adam_params.epochs = cfg.train.adam.epochs
         self.adam_params.lr = cfg.train.adam.lr
-        self.wandb_params.enabled = cfg.train.wandb.enabled
-        self.wandb_params.project = cfg.train.wandb.project
-        self.wandb_params.name = cfg.train.wandb.name
-        self.wandb_params.dir = cfg.train.wandb.dir
-        self.wandb_params.config = OmegaConf.to_container(cfg, resolve=True)
-        self.wandb_params.entity = cfg.train.wandb.entity
+        self.wandb_params.load_from_config(cfg, "train")
 
         self.dataset_split = cfg.train.dataset_split
         self.save_best_model = cfg.train.save_best_model
@@ -243,6 +247,13 @@ class EnsembleNetwork(nn.Module):
                 os.path.join(foldername, "{:02d}.pth".format(k))
             )
 
+def save_net(net: nn.Module, model_name: str):
+    model_path = os.path.join(os.getcwd(), model_name)
+    model_dir = os.path.dirname(model_path)
+    if not os.path.exists(model_dir):
+        os.makedirs(model_dir)
+    torch.save(net.state_dict(), model_path)
+
 
 def train_network(
     net: nn.Module, params: TrainParams, dataset: TensorDataset, loss_fn, split=True
@@ -310,8 +321,7 @@ def train_network(
             if params.wandb_params.enabled:
                 wandb.log({"training_loss": training_loss, "validation loss": loss_eval.item()}, step=epoch)
             if params.save_best_model is not None and loss_eval.item() < best_loss:
-                model_path = os.path.join(os.getcwd(), params.save_best_model)
-                torch.save(net.mlp.state_dict(), model_path)
+                save_net(net, params.save_best_model)
                 best_loss = loss_eval.item()
 
     return loss_lst
@@ -360,8 +370,7 @@ def train_network_sampling(
         if params.wandb_params.enabled:
             wandb.log({"total loss": loss_eval.item()}, step=epoch)
         if params.save_best_model is not None and loss_eval.item() < best_loss:
-            model_path = os.path.join(os.getcwd(), params.save_best_model)
-            torch.save(net.mlp.state_dict(), model_path)
+            save_net(net, params.save_best_model)
             best_loss = loss_eval.item()
 
     return loss_lst

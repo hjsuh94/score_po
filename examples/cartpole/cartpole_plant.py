@@ -119,7 +119,7 @@ class CartpoleNNDynamicalSystem(NNDynamicalSystem):
         super().__init__(network=residual_net, dim_x=4, dim_u=1)
 
     def dynamics(self, x: torch.Tensor, u: torch.Tensor, eval: bool = True):
-        return self.dynamics(x.unsqueeze(0), u.unsqueeze(0), eval).squeeze(0)
+        return self.dynamics_batch(x.unsqueeze(0), u.unsqueeze(0), eval).squeeze(0)
 
     def dynamics_batch(
         self, x_batch: torch.Tensor, u_batch: torch.Tensor, eval: bool = True
