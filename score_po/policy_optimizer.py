@@ -4,7 +4,7 @@ import numpy as np
 import torch
 import matplotlib.pyplot as plt
 
-from score_po.score_matching import ScoreFunctionEstimator
+from score_po.score_matching import ScoreEstimator
 
 
 
@@ -227,7 +227,7 @@ class FirstOrderNNPolicyOptimizer(PolicyOptimizer):
     
 class DRiskPolicyOptimizer(PolicyOptimizer):
     def __init__(self, params: PolicyOptimizerParams, 
-                 sf: ScoreFunctionEstimator, beta, **kwargs):
+                 sf: ScoreEstimator, beta, **kwargs):
         super().__init__(params=params, **kwargs)
         self.beta = beta 
         self.sf = sf
@@ -273,7 +273,7 @@ class DRiskPolicyOptimizer(PolicyOptimizer):
     
 class DRiskNNPolicyOptimizer(PolicyOptimizer):
     def __init__(self, params: PolicyOptimizerParams, 
-                 sf: ScoreFunctionEstimator, beta, **kwargs):
+                 sf: ScoreEstimator, beta, **kwargs):
         super().__init__(params=params, **kwargs)
         self.beta = beta 
         self.sf = sf
@@ -323,7 +323,7 @@ class FirstOrderPolicyDRiskOptimizer(
     """
 
     def __init__(self, params: PolicyOptimizerParams,
-                 sf: ScoreFunctionEstimator, beta: float):
+                 sf: ScoreEstimator, beta: float):
         super().__init__(params=params, sf=sf, beta=beta)
         
     def get_value_gradient(self, x0_batch, policy_params):
@@ -344,7 +344,7 @@ class FirstOrderNNPolicyDRiskOptimizer(
     """
 
     def __init__(self, params: PolicyOptimizerParams,
-                 sf: ScoreFunctionEstimator, beta: float):
+                 sf: ScoreEstimator, beta: float):
         super().__init__(params=params, sf=sf, beta=beta)
         
     def get_value_gradient(self, x0_batch, policy_params):

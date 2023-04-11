@@ -1,5 +1,5 @@
 defaults:
-  - user: terry
+  - user: test
 
 hydra:
   run:
@@ -24,7 +24,7 @@ train:
     entity: ${user.wandb_entity}  
   adam:
     lr: 1e-3
-    epochs: 2000
+    epochs: 3
     batch_size: 512
   dataset_split: null    
   save_best_model: checkpoint.pth

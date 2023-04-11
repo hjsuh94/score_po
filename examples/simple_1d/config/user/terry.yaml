@@ -1,1 +1,4 @@
-run_dir:  null
+run_dir: /home/terry/Documents/score_po_data/simple_1d/${now:%Y-%m-%d}/${now:%H-%M-%S}
+
+wandb_enabled: True
+wandb_entity: hjsuh94

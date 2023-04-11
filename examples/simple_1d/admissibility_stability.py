@@ -177,7 +177,6 @@ def main(cfg: DictConfig):
     plt.plot(x, (z - target_fun(x)) ** 2.0, "k--")
 
     plt.savefig("test.png")
-    plt.show()
     plt.close()
 
 
