@@ -1,3 +1,5 @@
+from typing import Optional
+
 import numpy as np
 import torch
 from omegaconf import DictConfig, OmegaConf
@@ -52,7 +54,7 @@ class Cost:
 
 
 class QuadraticCost(Cost):
-    def __init__(self, Q=None, R=None, Qd=None, xd=None):
+    def __init__(self, Q:torch.Tensor=None, R:torch.Tensor=None, Qd:torch.Tensor=None, xd:torch.Tensor=None):
         super().__init__()
         self.Q = Q  # quadratic state weight
         self.R = R  # quadratic input weight

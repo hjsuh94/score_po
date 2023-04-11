@@ -8,7 +8,7 @@ import torch
 import matplotlib.pyplot as plt
 
 from score_po.dataset import Dataset
-from score_po.score_matching import ScoreFunctionEstimator
+from score_po.score_matching import ScoreEstimator
 from score_po.policy_optimizer import OptimizerParams
 from score_po.nn import MLP
 
@@ -17,7 +17,7 @@ from environment import Environment, plot_samples_and_enviroment
 
 #%%
 network = MLP(3, 2, [64, 64, 64, 64])
-sf = ScoreFunctionEstimator(network, 2, 0)
+sf = ScoreEstimator(network, 2, 0)
 sf.load_network_parameters("examples/light_dark/nn_weights.pth")
 
 # plot the gradients.

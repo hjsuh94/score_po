@@ -119,7 +119,9 @@ class CartpoleNNDynamicalSystem(NNDynamicalSystem):
         super().__init__(network=residual_net, dim_x=4, dim_u=1)
 
     def dynamics(self, x: torch.Tensor, u: torch.Tensor, eval: bool = True):
-        return self.dynamics(x.unsqueeze(0), u.unsqueeze(0), eval).squeeze(0)
+        return self.dynamics_batch(
+            x.unsqueeze(0).to(self.device), u.unsqueeze(0).to(self.device), eval
+        ).squeeze(0)
 
     def dynamics_batch(
         self, x_batch: torch.Tensor, u_batch: torch.Tensor, eval: bool = True
@@ -132,8 +134,12 @@ class CartpoleNNDynamicalSystem(NNDynamicalSystem):
         # We first normalize x and u.
         # Our state and control can have very different magnitude. We can learn a more
         # accurate model with normalized input.
-        x_normalized = (2 * x_batch - (self.x_lo + self.x_up)) / (self.x_up - self.x_lo)
-        u_normalized = (2 * u_batch - (self.u_lo + self.u_up)) / (self.u_up - self.u_lo)
+        x_normalized = (2 * x_batch.to(self.device) - (self.x_lo + self.x_up)) / (
+            self.x_up - self.x_lo
+        )
+        u_normalized = (2 * u_batch.to(self.device) - (self.u_lo + self.u_up)) / (
+            self.u_up - self.u_lo
+        )
         xu_batch = torch.concat((x_normalized, u_normalized), dim=1)
 
         # The network only predicts the residual dynamics

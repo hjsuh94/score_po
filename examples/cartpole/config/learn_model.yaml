@@ -21,7 +21,7 @@ train:
     enabled: ${user.wandb_enabled}
     project: score_po
     dir: ${user.run_dir}
-    name: ${now:%Y.%m.%d-%H.%M.%S}_acrobot
+    name: ${now:%Y.%m.%d-%H.%M.%S}_cartpole
     entity: ${user.wandb_entity}
   adam:
     lr: 1e-3
