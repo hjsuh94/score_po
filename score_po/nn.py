@@ -137,8 +137,7 @@ class MLP(nn.Module):
         If the layers have registered gradients, extract them out to a vector
         representation.
         """
-        device = self.mlp[0].bias.device
-        params_vec = torch.zeros(0).to(device)
+        params_vec = torch.zeros(0)
         for i in range(len(self.mlp)):
             if type(self.mlp[i]) == nn.Linear:
                 params_vec = torch.hstack(
