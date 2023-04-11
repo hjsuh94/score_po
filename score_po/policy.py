@@ -20,9 +20,6 @@ class Policy:
     def set_parameters(self, parameters_vector):
         return None
 
-    def policy_jacobian(self, state, params_vector):
-        return None
-
     def get_action(self, state, t, params_vector):
         return None
 
@@ -48,16 +45,17 @@ class TimeVaryingOpenLoopPolicy(Policy):
     def set_parameters(self, params_vector):
         self.params_abstract = params_vector.reshape((self.T, self.dim_u))
 
-    def policy_jacobian(self, state, t):
-        jcb = torch.zeros((self.dim_u, self.T, self.dim_u))
-        jcb[torch.arange(self.dim_u), t, torch.arange(self.dim_u)] = 1
-        return jcb.reshape((self.dim_u, self.T * self.dim_u))
-
     def get_action(self, x, t):
-        return self.params_abstract[t, :]
+        return self.params_abstract[t, :].to(x.device)
 
     def get_action_batch(self, x_batch, t):
-        return self.params_abstract[t, :][None, :]
+        return self.params_abstract[t, :][None, :].to(x_batch.device)
+    
+    def save_parameters(self, filename):
+        torch.save(self.params_abstract, filename)
+        
+    def load_parameters(self, filename):
+        self.params_abstract = torch.load(filename)
 
 
 class TimeVaryingStateFeedbackPolicy(Policy):
@@ -78,43 +76,11 @@ class TimeVaryingStateFeedbackPolicy(Policy):
     def set_parameters(self, params_vector):
         self.params = params_vector.reshape(self.T, self.dim_u, self.dim_x + 1)
 
-    def policy_jacobian(self, state, t):
-        """
-        Get policy jacobian given state, parameter_vector and time t.
-        Note that in index notation,
-        u_i = K_ij x_j + m_i where K_ij is the gain and m_i is bias.
-        Thus, du_i / d_K_jk = 0 if i != j and x_k if i = j
-              du_i / d m_j = 0 if i != j and 1 if i = j
-        """
-
-        jcb = torch.zeros((self.dim_u, self.T, self.dim_u, self.dim_x + 1))
-        jcb[torch.arange(self.dim_u), t, torch.arange(self.dim_u), : self.dim_x] = state
-        jcb[torch.arange(self.dim_u), t, torch.arange(self.dim_u), self.dim_x :] = 1
-
-        return jcb.reshape(self.dim_u, self.T * self.dim_u * (self.dim_x + 1))
-
-    def policy_jacobian_batch(self, state_batch, t):
-        """
-        Get policy jacobian given state, parameter_vector and time t.
-        Note that in index notation,
-        u_i = K_ij x_j + m_i where K_ij is the gain and m_i is bias.
-        Thus, du_i / d_K_jk = 0 if i != j and x_k if i = j
-              du_i / d m_j = 0 if i != j and 1 if i = j
-        """
-        B = state_batch.shape[0]  # state_batch is of shape (B, n)
-        # jacobian is of shape (B, u, T * u * (x + 1))
-        jcb = torch.zeros((B, self.dim_u, self.T, self.dim_u, self.dim_x + 1))
-        jcb[
-            :, torch.arange(self.dim_u), t, torch.arange(self.dim_u), : self.dim_x
-        ] = state_batch
-        jcb[:, torch.arange(self.dim_u), t, torch.arange(self.dim_u), self.dim_x :] = 1
-
-        return jcb.reshape(self.dim_u, self.T * self.dim_u * (self.dim_x + 1))
-
     def get_action(self, x, t):
         """
         Get action given current time and state.
         """
+        self.params = self.params.to(x.device)
         gain = self.params[t, :, : self.dim_x]
         bias = self.params[t, :, self.dim_x :]
 
@@ -125,9 +91,16 @@ class TimeVaryingStateFeedbackPolicy(Policy):
         State_batch: B x dim_x
         gain
         """
+        self.params = self.params.to(x_batch.device)
         gain = self.params[t, :, : self.dim_x]
         bias = self.params[t, :, self.dim_x :]
-        return np.einsum("ij,bj->bi", gain, x_batch) + bias[:, 0]
+        return torch.einsum("ij,bj->bi", gain, x_batch) + bias[:, 0]
+    
+    def save_parameters(self, filename):
+        torch.save(self.params_abstract, filename)
+        
+    def load_parameters(self, filename):
+        self.params_abstract = torch.load(filename)    
 
 
 class NNPolicy(Policy):
@@ -146,16 +119,19 @@ class NNPolicy(Policy):
         return self.net.get_vectorized_parameters()
 
     def set_parameters(self, params_vector):
+        self.net = self.net.to(params_vector.device)
         return self.net.set_vectorized_parameters(params_vector)
 
-    def policy_jacobian(self, x, t):
-        """
-        Particularly annoying and difficult to get for NN policy.
-        """
-        raise NotImplementedError("Policy Jacobian for NN is WIP.")
-
     def get_action(self, x, t):
+        self.net = self.net.to(x.device)
         return self.net(x)
 
     def get_action_batch(self, x_batch, t):
+        self.net = self.net.to(x_batch.device)
         return self.net(x_batch)
+    
+    def save_parameters(self, filename):
+        self.net.save_network_parameters(filename)
+        
+    def load_parameters(self, filename):
+        self.net.load_network_parameters(filename)
