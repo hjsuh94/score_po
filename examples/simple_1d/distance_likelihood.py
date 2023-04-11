@@ -145,7 +145,6 @@ def main(cfg: DictConfig):
     plt.legend()
 
     plt.savefig("distance_likelihood.png")
-    plt.show()
     plt.close()
 
 
