@@ -6,6 +6,5 @@ numpy
 scipy
 tqdm
 wandb
-sklearn
+scikit-learn
 omegaconf
-sklearn
