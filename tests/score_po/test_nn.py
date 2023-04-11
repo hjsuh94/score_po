@@ -82,7 +82,7 @@ class TestTrainConfig:
 
         np.testing.assert_equal(params.wandb_params.enabled, True)
         np.testing.assert_equal(params.device, "cuda")
-        np.testing.assert_equal(params.save_best_model, "best")
+        np.testing.assert_equal(params.save_best_model, "best.pth")
 
         np.testing.assert_allclose(params.dataset_split, np.array([0.6, 0.4]))
 

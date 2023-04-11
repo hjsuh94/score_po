@@ -2,11 +2,13 @@ train:
   wandb:
     enabled: True
     project: null
+    name: null
+    dir: null
     entity: null
   adam:
     lr: 1e-5
     epochs: 3
     batch_size: 256
   device: "cuda"
-  save_best_model: "best"
+  save_best_model: "best.pth"
   dataset_split: [0.6, 0.4]

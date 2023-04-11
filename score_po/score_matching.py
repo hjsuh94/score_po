@@ -1,3 +1,7 @@
+from dataclasses import dataclass
+import os
+from typing import Optional, Tuple
+
 import numpy as np
 import matplotlib.pyplot as plt
 
@@ -6,6 +10,7 @@ import torch.optim as optim
 import torch.autograd as autograd
 from torch.utils.data import TensorDataset
 from tqdm import tqdm
+import wandb
 
 import wandb
 
@@ -246,7 +251,7 @@ class NoiseConditionedScoreEstimator(ScoreEstimator):
             data: of shape (B, dim_x + dim_u)
             sigma_lst: a geometric sequence of sigmas to train on.
         """
-        loss = torch.zeros(1)
+        loss = torch.zeros(1, device=data.device)
         for sigma in sigma_lst:
             loss += sigma**2.0 * self.evaluate_denoising_loss_with_sigma(data, sigma)
         return loss / len(sigma_lst)
@@ -257,7 +262,7 @@ class NoiseConditionedScoreEstimator(ScoreEstimator):
             data: of shape (B, dim_x + dim_u)
             sigma_lst: a geometric sequence of sigmas to train on.
         """
-        loss = torch.zeros(1)
+        loss = torch.zeros(1, device=data.device)
         for sigma in sigma_lst:
             loss += sigma**2.0 * self.evaluate_slicing_loss_with_sigma(data, sigma)
         return loss / len(sigma_lst)
@@ -265,7 +270,7 @@ class NoiseConditionedScoreEstimator(ScoreEstimator):
     def train_network(
         self,
         dataset: TensorDataset,
-        params: AdamOptimizerParams,
+        params: TrainParams,
         sigma_max=1,
         sigma_min=-3,
         n_sigmas=10,
@@ -281,14 +286,16 @@ class NoiseConditionedScoreEstimator(ScoreEstimator):
         scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, params.epochs)
 
         data_loader_train = torch.utils.data.DataLoader(
-            dataset, batch_size=params.batch_size
+            dataset, batch_size=params.adam_params.batch_size
         )
         data_loader_eval = torch.utils.data.DataLoader(dataset, batch_size=len(dataset))
 
         sigma_lst = np.geomspace(sigma_min, sigma_max, n_sigmas)
-        loss_lst = torch.zeros(params.epochs)
+        loss_lst = np.zeros(params.adam_params.epochs)
 
-        for epoch in tqdm(range(params.epochs)):
+        best_loss = np.inf
+        for epoch in tqdm(range(params.adam_params.epochs)):
+            training_loss = 0.0
             for z_batch in data_loader_train:
                 z_batch = z_batch[0]
                 optimizer.zero_grad()
@@ -302,6 +309,18 @@ class NoiseConditionedScoreEstimator(ScoreEstimator):
                     z_all = z_all[0]
                     loss_eval = self.evaluate_denoising_loss(z_all, sigma_lst)
                     loss_lst[epoch] = loss_eval.item()
-                print(f"epoch {epoch}, total loss {loss_eval.item()}")
+                if params.enabled:
+                    wandb.log(
+                        {"loss": loss_eval.item()},
+                        step=epoch,
+                    )
+                else:
+                    print(
+                        f"epoch {epoch}, loss {loss_eval.item()}"
+                    )
+                if params.save_best_model is not None and loss_eval.item() < best_loss:
+                    model_path = os.path.join(os.getcwd(), params.save_best_model)
+                    torch.save(self.net.state_dict(), model_path)
+                    best_loss = loss_eval.item()
 
         return loss_lst
