@@ -16,6 +16,7 @@ from score_po.policy import (
 )
 from score_po.dynamical_system import DynamicalSystem, NNDynamicalSystem
 from score_po.nn import MLP
+from score_po.score_matching import ScoreEstimator
 
 
 class TestPolicyConfig:
@@ -33,6 +34,23 @@ class TestPolicyConfig:
 
         np.testing.assert_equal(params.wandb_params.enabled, True)
         np.testing.assert_equal(params.device, "cuda")
+
+    def test_drisk_cfg_load(self):
+        params = mut.DRiskPolicyOptimizerParams()
+        with initialize(config_path="./config"):
+            cfg = compose(config_name="policy_params")
+            params.load_from_config(cfg)
+
+        np.testing.assert_equal(params.T, 20)
+        np.testing.assert_allclose(params.x0_upper, torch.Tensor([0.3, 0.2]))
+        np.testing.assert_allclose(params.x0_lower, torch.Tensor([0.28, 0.18]))
+        np.testing.assert_equal(params.batch_size, 16)
+        np.testing.assert_allclose(params.std, torch.Tensor([1e-2, 1e-2]))
+
+        np.testing.assert_equal(params.wandb_params.enabled, True)
+        np.testing.assert_equal(params.device, "cuda")
+
+        np.testing.assert_equal(params.beta, 0.1)
 
 
 class SingleIntegrator(DynamicalSystem):
@@ -106,7 +124,7 @@ class TestFirstOrderPolicyOptimizerNNDynamics:
 
         network = MLP(4, 2, [128, 128])
         dynamics = NNDynamicalSystem(2, 2, network)
-        dynamics.load_network_parameters("tests/score_po/dynamics.pth")
+        dynamics.load_network_parameters("tests/score_po/weights/dynamics.pth")
 
         params = mut.PolicyOptimizerParams()
         params.cost = costs
@@ -151,4 +169,64 @@ class TestFirstOrderPolicyOptimizerNNDynamics:
         params.policy_params_0 = policy.get_parameters()
 
         optimizer = mut.FirstOrderNNPolicyOptimizer(params)
+        optimizer.iterate()
+
+
+class TestDRiskOptimizer:
+    def initialize_problem(self, device, policy, cfg):
+        costs = QuadraticCost()
+        costs.load_from_config(cfg)
+
+        network = MLP(4, 2, [128, 128])
+        dynamics = NNDynamicalSystem(2, 2, network)
+        dynamics.load_network_parameters("tests/score_po/weights/dynamics.pth")
+
+        score_network = MLP(4, 4, [512])
+        sf = ScoreEstimator(2, 2, score_network)
+        sf.load_network_parameters("tests/score_po/weights/sf_weights.pth")
+
+        params = mut.DRiskPolicyOptimizerParams()
+        params.cost = costs
+        params.dynamical_system = dynamics
+        params.policy = policy
+        params.sf = sf
+        params.load_from_config(cfg)
+        params.device = device  # overwrite device for testing
+        return params
+
+    @pytest.mark.parametrize("device", ("cpu", "cuda"))
+    def test_open_loop_policy(self, device):
+        with initialize(config_path="./config"):
+            self.cfg = compose(config_name="policy_params")
+
+        policy = TimeVaryingOpenLoopPolicy(2, 2, self.cfg.policy.T)
+        params = self.initialize_problem(device, policy, self.cfg)
+        params.policy_params_0 = policy.get_parameters()
+
+        optimizer = mut.FirstOrderDRiskPolicyOptimizer(params)
+        optimizer.iterate()
+
+    @pytest.mark.parametrize("device", ("cpu", "cuda"))
+    def test_state_feedback_policy(self, device):
+        with initialize(config_path="./config"):
+            self.cfg = compose(config_name="policy_params")
+
+        policy = TimeVaryingStateFeedbackPolicy(2, 2, self.cfg.policy.T)
+        params = self.initialize_problem(device, policy, self.cfg)
+        params.policy_params_0 = policy.get_parameters()
+
+        optimizer = mut.FirstOrderDRiskPolicyOptimizer(params)
+        optimizer.iterate()
+
+    @pytest.mark.parametrize("device", ("cpu", "cuda"))
+    def test_nn_policy(self, device):
+        with initialize(config_path="./config"):
+            self.cfg = compose(config_name="policy_params")
+
+        network = MLP(2, 2, [128, 128])
+        policy = NNPolicy(2, 2, network)
+        params = self.initialize_problem(device, policy, self.cfg)
+        params.policy_params_0 = policy.get_parameters()
+
+        optimizer = mut.FirstOrderDRiskNNPolicyOptimizer(params)
         optimizer.iterate()
