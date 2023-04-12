@@ -95,7 +95,7 @@ class PolicyOptimizer:
             noise_trj: (T, dim_u) noise output on the output of trajectory.
         """
         x_trj = torch.zeros((self.params.T + 1, self.ds.dim_x)).to(self.params.device)
-        u_trj = torch.zeros((self.params.T, self.ds.dim_x)).to(self.params.device)
+        u_trj = torch.zeros((self.params.T, self.ds.dim_u)).to(self.params.device)
         x_trj[0] = x0.to(self.params.device)
 
         for t in range(self.params.T):
