@@ -102,7 +102,7 @@ class TestFirstOrderPolicyOptimizerNNDynamics:
         costs.load_from_config(cfg)
         
         network = MLP(4, 2, [128, 128])
-        dynamics = NNDynamicalSystem(network, 2, 2)
+        dynamics = NNDynamicalSystem(2, 2, network)
         dynamics.load_network_parameters("tests/score_po/dynamics.pth")
             
         params = mut.PolicyOptimizerParams()

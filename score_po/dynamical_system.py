@@ -54,11 +54,18 @@ class NNDynamicalSystem(DynamicalSystem):
     - output shape (n)
     """
 
-    def __init__(self, network, dim_x, dim_u):
+    def __init__(self, dim_x, dim_u, network):
         super().__init__(dim_x, dim_u)
         self.net = network
         self.is_differentiable = True
-
+        self.check_input_consistency()
+        
+    def check_input_consistency(self):
+        if self.net.dim_in is not (self.dim_x + self.dim_u):
+            raise ValueError("Inconsistent input size of neural network.")
+        if self.net.dim_out is not self.dim_x:
+            raise ValueError("Inconsistent output size of neural network.")
+        
     def dynamics(self, x, u, eval=True):
         if eval:
             self.net.eval()
