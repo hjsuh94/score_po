@@ -242,12 +242,14 @@ class EnsembleNetwork(nn.Module):
             network.load_network_parameters(
                 os.path.join(foldername, "{:02d}.pth".format(k))
             )
-            
+
+
 def tuple_to_device(tup, device):
     lst = []
     for i in tup:
         lst.append(i.to(device))
-    return lst
+    return tuple(lst)
+
 
 def train_network(
     net: nn.Module, params: TrainParams, dataset: TensorDataset, loss_fn, split=True
@@ -293,15 +295,12 @@ def train_network(
     data_loader_eval = torch.utils.data.DataLoader(
         val_dataset, batch_size=len(val_dataset)
     )
-    
 
     loss_lst = np.zeros(params.adam_params.epochs)
     best_loss = np.inf
-    
-    
 
-    training_loss = 0.
-    net = net.to(params.device)    
+    training_loss = 0.0
+    net = net.to(params.device)
     for epoch in tqdm(range(params.adam_params.epochs)):
         for z_batch in data_loader_train:
             optimizer.zero_grad()
@@ -312,14 +311,20 @@ def train_network(
             scheduler.step()
             training_loss += loss.item() * z_batch[0].shape[0]
         training_loss /= len(train_dataset)
-        
+
         with torch.no_grad():
             for z_all in data_loader_eval:
                 z_all = tuple_to_device(z_all, params.device)
                 loss_eval = loss_fn(z_batch, net)
                 loss_lst[epoch] = loss_eval.item()
             if params.wandb_params.enabled:
-                wandb.log({"training_loss": training_loss, "validation loss": loss_eval.item()}, step=epoch)
+                wandb.log(
+                    {
+                        "training_loss": training_loss,
+                        "validation loss": loss_eval.item(),
+                    },
+                    step=epoch,
+                )
             if params.save_best_model is not None and loss_eval.item() < best_loss:
                 model_path = os.path.join(os.getcwd(), params.save_best_model)
                 torch.save(net.mlp.state_dict(), model_path)

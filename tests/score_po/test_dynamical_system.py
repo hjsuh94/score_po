@@ -14,9 +14,9 @@ class TestNNDynamicalSystem:
     def test_constructor(self):
         with np.testing.assert_raises(ValueError):
             # throws since input does not equal dim_x + dim_u.
-            network = MLP(4, 2, [128, 128])            
+            network = MLP(4, 2, [128, 128])
             mut.NNDynamicalSystem(4, 2, network)
-            
+
         with np.testing.assert_raises(ValueError):
             # throws since output does not equal number of states.
             network = MLP(4, 3, [128, 128])
@@ -30,7 +30,7 @@ class TestNNDynamicalSystem:
     def test_dynamics_eval(self, device: Literal["cpu", "cuda"]):
         network = MLP(3, 2, [128, 128])
         dynamics = mut.NNDynamicalSystem(2, 1, network)
-        
+
         x_tensor = torch.rand(100, 2).to(device)
         u_tensor = torch.rand(100, 1).to(device)
 
@@ -43,11 +43,11 @@ class TestNNDynamicalSystem:
         network = MLP(4, 2, [128, 128])
         dynamics = mut.NNDynamicalSystem(2, 2, network)
         dataset_size = 1000
-        
+
         x_batch = 2.0 * torch.rand(dataset_size, 2) - 1.0
         u_batch = 2.0 * torch.rand(dataset_size, 2) - 1.0
         xnext_batch = x_batch + u_batch
-        
+
         dataset = TensorDataset(x_batch, u_batch, xnext_batch)
         params = TrainParams()
         with initialize(config_path="./config"):
