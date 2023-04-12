@@ -30,7 +30,7 @@ class TestPolicyConfig:
         np.testing.assert_allclose(params.x0_upper.cpu(), torch.Tensor([0.3, 0.2]))
         np.testing.assert_allclose(params.x0_lower.cpu(), torch.Tensor([0.28, 0.18]))
         np.testing.assert_equal(params.batch_size, 16)
-        np.testing.assert_allclose(params.std, torch.Tensor([1e-2, 1e-2]))
+        np.testing.assert_allclose(params.std, 1e-2)
 
         np.testing.assert_equal(params.wandb_params.enabled, True)
         np.testing.assert_equal(params.device, "cuda")
@@ -42,10 +42,10 @@ class TestPolicyConfig:
             params.load_from_config(cfg)
 
         np.testing.assert_equal(params.T, 20)
-        np.testing.assert_allclose(params.x0_upper, torch.Tensor([0.3, 0.2]))
-        np.testing.assert_allclose(params.x0_lower, torch.Tensor([0.28, 0.18]))
+        np.testing.assert_allclose(params.x0_upper.cpu(), torch.Tensor([0.3, 0.2]))
+        np.testing.assert_allclose(params.x0_lower.cpu(), torch.Tensor([0.28, 0.18]))
         np.testing.assert_equal(params.batch_size, 16)
-        np.testing.assert_allclose(params.std, torch.Tensor([1e-2, 1e-2]))
+        np.testing.assert_allclose(params.std, 1e-2)
 
         np.testing.assert_equal(params.wandb_params.enabled, True)
         np.testing.assert_equal(params.device, "cuda")
@@ -194,6 +194,7 @@ class TestDRiskOptimizer:
     def test_open_loop_policy(self, device):
         with initialize(config_path="./config"):
             self.cfg = compose(config_name="policy_params")
+            self.cfg.policy.device = device            
 
         policy = TimeVaryingOpenLoopPolicy(2, 2, self.cfg.policy.T)
         params = self.initialize_problem(device, policy, self.cfg)
@@ -206,6 +207,7 @@ class TestDRiskOptimizer:
     def test_state_feedback_policy(self, device):
         with initialize(config_path="./config"):
             self.cfg = compose(config_name="policy_params")
+            self.cfg.policy.device = device            
 
         policy = TimeVaryingStateFeedbackPolicy(2, 2, self.cfg.policy.T)
         params = self.initialize_problem(device, policy, self.cfg)
@@ -218,6 +220,7 @@ class TestDRiskOptimizer:
     def test_nn_policy(self, device):
         with initialize(config_path="./config"):
             self.cfg = compose(config_name="policy_params")
+            self.cfg.policy.device = device
 
         network = MLP(2, 2, [128, 128])
         policy = NNPolicy(2, 2, network)
