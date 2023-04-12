@@ -10,6 +10,8 @@ policy:
   load_ckpt: null
   device: "cuda"
 
+  beta: 0.1 # For score-function weighting
+
   wandb:
     enabled: True
     project: null
