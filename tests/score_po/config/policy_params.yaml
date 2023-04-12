@@ -2,10 +2,10 @@ policy:
   T: 20
   x0_upper: [0.3, 0.2] # x0_upper = x0_lower for trajopt.
   x0_lower: [0.28, 0.18]
-  batch_size: 1 # 1 for trajopt.
+  batch_size: 16 # 1 for trajopt.
   std: 1e-2
   lr: 1e-8
-  max_iters: 100
+  max_iters: 3
   save_best_model: null
   load_ckpt: null
   device: "cuda"

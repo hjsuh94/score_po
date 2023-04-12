@@ -54,23 +54,32 @@ class NNDynamicalSystem(DynamicalSystem):
     - output shape (n)
     """
 
-    def __init__(self, network, dim_x, dim_u):
+    def __init__(self, dim_x, dim_u, network):
         super().__init__(dim_x, dim_u)
         self.net = network
         self.is_differentiable = True
+        self.check_input_consistency()
+
+    def check_input_consistency(self):
+        if hasattr(self.net, "dim_in") and (self.net.dim_in is not self.dim_x + self.dim_u):
+            raise ValueError("Inconsistent input size of neural network.")
+        if hasattr(self.net, "dim_out") and (self.net.dim_out is not self.dim_x):
+            raise ValueError("Inconsistent output size of neural network.")
 
     def dynamics(self, x, u, eval=True):
         if eval:
             self.net.eval()
+        self.net = self.net.to(x.device)
 
-        input = self.hstack((x, u))[None, :]
+        input = torch.hstack((x, u))[None, :]
         return self.net(input)[0, :]
 
     def dynamics_batch(self, x_batch, u_batch, eval=True):
         if eval:
             self.net.eval()
+        self.net = self.net.to(x_batch.device)
 
-        input = self.hstack((x_batch, u_batch))
+        input = torch.hstack((x_batch, u_batch))
         return self.net(input)
 
     def evaluate_dynamic_loss(self, data, labels, sigma=0.0):

@@ -25,7 +25,7 @@ target_fun = lambda x: x**2.0 * np.sin(x)
 def get_ensembles(x, data, cfg):
     data_tensor = torch.Tensor(data).reshape(-1, 1)
     dataset = TensorDataset(data_tensor)
-    label = torch.Tensor(target_fun(data)).reshape(-1, 1)
+    label = torch.Tensor(target_fun(data)).reshape(-1, 1).to(cfg.device)
     params = TrainParams()
     params.load_from_config(cfg)
     network_lst = []
@@ -40,9 +40,9 @@ def get_ensembles(x, data, cfg):
 
     ensemble = EnsembleNetwork((1,), (1,), network_lst)
 
-    x_tensor = torch.Tensor(x).reshape(-1, 1)
-    z = ensemble(x_tensor).detach().numpy()[:, 0]
-    std = np.sqrt(ensemble.get_variance(x_tensor).detach().numpy())
+    x_tensor = torch.Tensor(x).reshape(-1, 1).to(cfg.device)
+    z = ensemble(x_tensor).detach().cpu().numpy()[:, 0]
+    std = np.sqrt(ensemble.get_variance(x_tensor).detach().cpu().numpy())
     return z, std
 
 
