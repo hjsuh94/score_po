@@ -13,7 +13,9 @@ from score_po.policy import (
     TimeVaryingOpenLoopPolicy,
     TimeVaryingStateFeedbackPolicy,
     NNPolicy)
-from score_po.dynamical_system import DynamicalSystem
+from score_po.dynamical_system import (
+    DynamicalSystem,
+    NNDynamicalSystem)
 from score_po.nn import MLP
 
 class TestPolicyConfig:
@@ -26,7 +28,7 @@ class TestPolicyConfig:
         np.testing.assert_equal(params.T, 20)
         np.testing.assert_allclose(params.x0_upper, torch.Tensor([0.3, 0.2]))
         np.testing.assert_allclose(params.x0_lower, torch.Tensor([0.28, 0.18]))
-        np.testing.assert_equal(params.batch_size, 1)
+        np.testing.assert_equal(params.batch_size, 16)
         np.testing.assert_allclose(params.std, torch.Tensor([1e-2, 1e-2]))
 
         np.testing.assert_equal(params.wandb_params.enabled, True)
@@ -52,6 +54,60 @@ class TestFirstOrderPolicyOptimizerKnownDynamics:
         params = mut.PolicyOptimizerParams()
         params.cost = costs
         params.dynamical_system = SingleIntegrator()
+        params.policy = policy
+        params.load_from_config(cfg)
+        params.device = device # overwrite device for testing
+        return params
+
+    @pytest.mark.parametrize("device", ("cpu", "cuda"))
+    def test_open_loop_policy(self, device):
+        with initialize(config_path="./config"):
+            self.cfg = compose(config_name="policy_params")
+                            
+        policy = TimeVaryingOpenLoopPolicy(2, 2, self.cfg.policy.T)
+        params = self.initialize_problem(device, policy, self.cfg)
+        params.policy_params_0 = policy.get_parameters()
+        
+        optimizer = mut.FirstOrderPolicyOptimizer(params)
+        optimizer.iterate()
+
+    @pytest.mark.parametrize("device", ("cpu", "cuda"))
+    def test_state_feedback_policy(self, device):
+        with initialize(config_path="./config"):
+            self.cfg = compose(config_name="policy_params")
+                    
+        policy = TimeVaryingStateFeedbackPolicy(2, 2, self.cfg.policy.T)
+        params = self.initialize_problem(device, policy, self.cfg)        
+        params.policy_params_0 = policy.get_parameters()
+        
+        optimizer = mut.FirstOrderPolicyOptimizer(params)
+        optimizer.iterate()
+        
+    @pytest.mark.parametrize("device", ("cpu", "cuda"))
+    def test_nn_policy(self, device):
+        with initialize(config_path="./config"):
+            self.cfg = compose(config_name="policy_params")
+                    
+        network = MLP(2, 2, [128, 128])
+        policy = NNPolicy(2, 2, network)
+        params = self.initialize_problem(device, policy, self.cfg)
+        params.policy_params_0 = policy.get_parameters()
+        
+        optimizer = mut.FirstOrderNNPolicyOptimizer(params)
+        optimizer.iterate()
+        
+class TestFirstOrderPolicyOptimizerNNDynamics:
+    def initialize_problem(self, device, policy, cfg):
+        costs = QuadraticCost()
+        costs.load_from_config(cfg)
+        
+        network = MLP(4, 2, [128, 128])
+        dynamics = NNDynamicalSystem(network, 2, 2)
+        dynamics.load_network_parameters("./dynamics.pth")
+            
+        params = mut.PolicyOptimizerParams()
+        params.cost = costs
+        params.dynamical_system = dynamics
         params.policy = policy
         params.load_from_config(cfg)
         params.device = device # overwrite device for testing

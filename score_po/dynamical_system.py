@@ -62,15 +62,17 @@ class NNDynamicalSystem(DynamicalSystem):
     def dynamics(self, x, u, eval=True):
         if eval:
             self.net.eval()
-
-        input = self.hstack((x, u))[None, :]
+        self.net = self.net.to(x.device)
+        
+        input = torch.hstack((x, u))[None, :]
         return self.net(input)[0, :]
 
     def dynamics_batch(self, x_batch, u_batch, eval=True):
         if eval:
             self.net.eval()
+        self.net = self.net.to(x_batch.device)
 
-        input = self.hstack((x_batch, u_batch))
+        input = torch.hstack((x_batch, u_batch))
         return self.net(input)
 
     def evaluate_dynamic_loss(self, data, labels, sigma=0.0):

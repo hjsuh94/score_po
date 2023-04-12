@@ -1,7 +1,7 @@
 from omegaconf import DictConfig, OmegaConf
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
-import os
+import os, time
 
 import numpy as np
 import torch
@@ -242,7 +242,12 @@ class EnsembleNetwork(nn.Module):
             network.load_network_parameters(
                 os.path.join(foldername, "{:02d}.pth".format(k))
             )
-
+            
+def tuple_to_device(tup, device):
+    lst = []
+    for i in tup:
+        lst.append(i.to(device))
+    return lst
 
 def train_network(
     net: nn.Module, params: TrainParams, dataset: TensorDataset, loss_fn, split=True
@@ -268,6 +273,7 @@ def train_network(
         )
 
     net.train()
+
     optimizer = optim.Adam(net.parameters(), params.adam_params.lr)
     scheduler = optim.lr_scheduler.CosineAnnealingLR(
         optimizer, params.adam_params.epochs
@@ -287,24 +293,29 @@ def train_network(
     data_loader_eval = torch.utils.data.DataLoader(
         val_dataset, batch_size=len(val_dataset)
     )
+    
 
     loss_lst = np.zeros(params.adam_params.epochs)
     best_loss = np.inf
+    
+    
 
     training_loss = 0.
+    net = net.to(params.device)    
     for epoch in tqdm(range(params.adam_params.epochs)):
         for z_batch in data_loader_train:
             optimizer.zero_grad()
+            z_batch = tuple_to_device(z_batch, params.device)
             loss = loss_fn(z_batch, net)
             loss.backward()
             optimizer.step()
             scheduler.step()
             training_loss += loss.item() * z_batch[0].shape[0]
         training_loss /= len(train_dataset)
-
+        
         with torch.no_grad():
             for z_all in data_loader_eval:
-                z_all = z_all
+                z_all = tuple_to_device(z_all, params.device)
                 loss_eval = loss_fn(z_batch, net)
                 loss_lst[epoch] = loss_eval.item()
             if params.wandb_params.enabled:
