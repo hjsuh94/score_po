@@ -114,6 +114,31 @@ class TestPolicyOptimizerKnownDynamics:
         optimizer = mut.PolicyOptimizer(params)
         optimizer.iterate()
 
+    @pytest.mark.parametrize("device", ("cpu", "cuda"))
+    def test_torch_optimizer(self, device):
+        with initialize(config_path="./config"):
+            self.cfg = compose(config_name="policy_params")
+
+        network = MLP(2, 2, [128, 128])
+        policy = NNPolicy(2, 2, network)
+        params = self.initialize_problem(device, policy, self.cfg)
+        
+        params.torch_optimizer = torch.optim.Adadelta
+        optimizer = mut.PolicyOptimizer(params)
+        optimizer.iterate()
+        
+        params.torch_optimizer = torch.optim.RMSprop
+        optimizer = mut.PolicyOptimizer(params)
+        optimizer.iterate()
+                
+        params.torch_optimizer = torch.optim.SGD
+        optimizer = mut.PolicyOptimizer(params)
+        optimizer.iterate()
+                
+        params.torch_optimizer = torch.optim.Adam
+        optimizer = mut.PolicyOptimizer(params)
+        optimizer.iterate()
+
 
 class TestFirstOrderPolicyOptimizerNNDynamics:
     def initialize_problem(self, device, policy, cfg):

@@ -31,6 +31,7 @@ class PolicyOptimizerParams:
 
     save_best_model: Optional[str] = None
     device: str = "cuda"
+    torch_optimizer: torch.optim.Optimizer = torch.optim.Adam
 
     def __init__(self):
         self.wandb_params = WandbParams()
@@ -208,8 +209,8 @@ class PolicyOptimizer:
         best_cost = np.inf
         self.cost_lst[0] = cost
         
-        optimizer = torch.optim.Adam(
-            self.policy.parameters(), self.params.lr)
+        optimizer = self.params.torch_optimizer(
+            self.policy.parameters(), lr=self.params.lr)
 
         for iter in range(self.params.max_iters - 1):
             optimizer.zero_grad()
