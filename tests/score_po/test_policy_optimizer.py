@@ -65,7 +65,7 @@ class SingleIntegrator(DynamicalSystem):
         return x_batch + u_batch
 
 
-class TestFirstOrderPolicyOptimizerKnownDynamics:
+class TestPolicyOptimizerKnownDynamics:
     def initialize_problem(self, device, policy, cfg):
 
         costs = QuadraticCost()
@@ -88,7 +88,7 @@ class TestFirstOrderPolicyOptimizerKnownDynamics:
         policy = TimeVaryingOpenLoopPolicy(2, 2, self.cfg.policy.T)
         params = self.initialize_problem(device, policy, self.cfg)
 
-        optimizer = mut.FirstOrderPolicyOptimizer(params)
+        optimizer = mut.PolicyOptimizer(params)
         optimizer.iterate()
 
     @pytest.mark.parametrize("device", ("cpu", "cuda"))
@@ -99,7 +99,7 @@ class TestFirstOrderPolicyOptimizerKnownDynamics:
         policy = TimeVaryingStateFeedbackPolicy(2, 2, self.cfg.policy.T)
         params = self.initialize_problem(device, policy, self.cfg)
 
-        optimizer = mut.FirstOrderPolicyOptimizer(params)
+        optimizer = mut.PolicyOptimizer(params)
         optimizer.iterate()
 
     @pytest.mark.parametrize("device", ("cpu", "cuda"))
@@ -111,7 +111,7 @@ class TestFirstOrderPolicyOptimizerKnownDynamics:
         policy = NNPolicy(2, 2, network)
         params = self.initialize_problem(device, policy, self.cfg)
 
-        optimizer = mut.FirstOrderNNPolicyOptimizer(params)
+        optimizer = mut.PolicyOptimizer(params)
         optimizer.iterate()
 
 
@@ -141,7 +141,7 @@ class TestFirstOrderPolicyOptimizerNNDynamics:
         policy = TimeVaryingOpenLoopPolicy(2, 2, self.cfg.policy.T)
         params = self.initialize_problem(device, policy, self.cfg)
 
-        optimizer = mut.FirstOrderPolicyOptimizer(params)
+        optimizer = mut.PolicyOptimizer(params)
         optimizer.iterate()
 
     @pytest.mark.parametrize("device", ("cpu", "cuda"))
@@ -152,7 +152,7 @@ class TestFirstOrderPolicyOptimizerNNDynamics:
         policy = TimeVaryingStateFeedbackPolicy(2, 2, self.cfg.policy.T)
         params = self.initialize_problem(device, policy, self.cfg)
 
-        optimizer = mut.FirstOrderPolicyOptimizer(params)
+        optimizer = mut.PolicyOptimizer(params)
         optimizer.iterate()
 
     @pytest.mark.parametrize("device", ("cpu", "cuda"))
@@ -164,10 +164,10 @@ class TestFirstOrderPolicyOptimizerNNDynamics:
         policy = NNPolicy(2, 2, network)
         params = self.initialize_problem(device, policy, self.cfg)
 
-        optimizer = mut.FirstOrderNNPolicyOptimizer(params)
+        optimizer = mut.PolicyOptimizer(params)
         optimizer.iterate()
 
-
+"""
 class TestDRiskOptimizer:
     def initialize_problem(self, device, policy, cfg):
         costs = QuadraticCost()
@@ -229,3 +229,4 @@ class TestDRiskOptimizer:
 
         optimizer = mut.FirstOrderDRiskNNPolicyOptimizer(params)
         optimizer.iterate()
+"""

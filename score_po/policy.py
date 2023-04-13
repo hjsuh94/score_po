@@ -1,31 +1,46 @@
+import abc
+
 import numpy as np
 import torch
 import torch.optim as optim
+import torch.nn as nn
 
-
-class Policy:
+class Policy(nn.Module, abc.ABC):
     """
     Policy class. note that
     """
 
+    @abc.abstractmethod
     def __init__(self, dim_x, dim_u):
+        super().__init__()
         self.dim_x = dim_x
         self.dim_u = dim_u
         self.dim_params = 0
         self.params = 0
-
+        
+    @abc.abstractmethod
     def get_parameters(self):
-        return None
+        """Get parameters."""
 
-    def set_parameters(self, parameters_vector):
-        return None
+    @abc.abstractmethod
+    def set_parameters(self, params):
+        """Set parameters."""
 
-    def get_action(self, state, t, params_vector):
-        return None
+    @abc.abstractmethod
+    def get_action(self, x, t):
+        """Get action given state and time"""
 
-    def get_action_batch(self, state_batch, t, params_vector_batch):
-        return None
-
+    @abc.abstractmethod
+    def get_action_batch(self, state_batch, t):
+        """Get action_batch given state_batch and time."""
+        
+    @abc.abstractmethod        
+    def save_parameters(self, filename):
+        """Save file to filename."""
+        
+    @abc.abstractmethod                
+    def load_parameters(self, filename):
+        """Load file from filename."""
 
 class TimeVaryingOpenLoopPolicy(Policy):
     """
@@ -37,25 +52,26 @@ class TimeVaryingOpenLoopPolicy(Policy):
         super().__init__(dim_x, dim_u)
         self.T = T
         self.dim_params = self.dim_u * self.T
-        self.params_abstract = torch.zeros((T, self.dim_u))
+        self.params = nn.Parameter(
+            torch.zeros((T, self.dim_u)))
 
     def get_parameters(self):
-        return self.params_abstract.ravel()
+        return self.params
 
-    def set_parameters(self, params_vector):
-        self.params_abstract = params_vector.reshape((self.T, self.dim_u))
+    def set_parameters(self, params):
+        self.params.data = params
 
     def get_action(self, x, t):
-        return self.params_abstract[t, :].to(x.device)
+        return self.params[t, :].to(x.device)
 
     def get_action_batch(self, x_batch, t):
-        return self.params_abstract[t, :][None, :].to(x_batch.device)
+        return self.params[t, :][None, :].to(x_batch.device)
     
     def save_parameters(self, filename):
-        torch.save(self.params_abstract, filename)
+        torch.save(self.params, filename)
         
     def load_parameters(self, filename):
-        self.params_abstract = torch.load(filename)
+        self.params = torch.load(filename)
 
 
 class TimeVaryingStateFeedbackPolicy(Policy):
@@ -68,13 +84,15 @@ class TimeVaryingStateFeedbackPolicy(Policy):
         super().__init__(dim_x, dim_u)
         self.T = T
         self.dim_params = self.dim_u * (self.dim_x + 1) * self.T
-        self.params = torch.zeros(self.T, self.dim_u, self.dim_x + 1)
+        self.params = nn.Parameter(
+            torch.zeros(self.T, self.dim_u, self.dim_x + 1))
 
     def get_parameters(self):
         return self.params.ravel()
 
     def set_parameters(self, params_vector):
-        self.params = params_vector.reshape(self.T, self.dim_u, self.dim_x + 1)
+        self.params.data = params_vector.reshape(
+            self.T, self.dim_u, self.dim_x + 1)
 
     def get_action(self, x, t):
         """
@@ -109,6 +127,7 @@ class NNPolicy(Policy):
     """
 
     def __init__(self, dim_x, dim_u, network):
+        super().__init__(dim_x, dim_u)
         self.dim_x = dim_x
         self.dim_u = dim_u
         self.net = network
