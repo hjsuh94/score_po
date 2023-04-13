@@ -122,19 +122,19 @@ class TestPolicyOptimizerKnownDynamics:
         network = MLP(2, 2, [128, 128])
         policy = NNPolicy(2, 2, network)
         params = self.initialize_problem(device, policy, self.cfg)
-        
+
         params.torch_optimizer = torch.optim.Adadelta
         optimizer = mut.PolicyOptimizer(params)
         optimizer.iterate()
-        
+
         params.torch_optimizer = torch.optim.RMSprop
         optimizer = mut.PolicyOptimizer(params)
         optimizer.iterate()
-                
+
         params.torch_optimizer = torch.optim.SGD
         optimizer = mut.PolicyOptimizer(params)
         optimizer.iterate()
-                
+
         params.torch_optimizer = torch.optim.Adam
         optimizer = mut.PolicyOptimizer(params)
         optimizer.iterate()
@@ -192,7 +192,7 @@ class TestFirstOrderPolicyOptimizerNNDynamics:
         optimizer = mut.PolicyOptimizer(params)
         optimizer.iterate()
 
-"""
+
 class TestDRiskOptimizer:
     def initialize_problem(self, device, policy, cfg):
         costs = QuadraticCost()
@@ -219,26 +219,26 @@ class TestDRiskOptimizer:
     def test_open_loop_policy(self, device):
         with initialize(config_path="./config"):
             self.cfg = compose(config_name="policy_params")
-            self.cfg.policy.device = device            
+            self.cfg.policy.device = device
 
         policy = TimeVaryingOpenLoopPolicy(2, 2, self.cfg.policy.T)
         params = self.initialize_problem(device, policy, self.cfg)
         params.policy_params_0 = policy.get_parameters()
 
-        optimizer = mut.FirstOrderDRiskPolicyOptimizer(params)
+        optimizer = mut.DRiskPolicyOptimizer(params)
         optimizer.iterate()
 
     @pytest.mark.parametrize("device", ("cpu", "cuda"))
     def test_state_feedback_policy(self, device):
         with initialize(config_path="./config"):
             self.cfg = compose(config_name="policy_params")
-            self.cfg.policy.device = device            
+            self.cfg.policy.device = device
 
         policy = TimeVaryingStateFeedbackPolicy(2, 2, self.cfg.policy.T)
         params = self.initialize_problem(device, policy, self.cfg)
         params.policy_params_0 = policy.get_parameters()
 
-        optimizer = mut.FirstOrderDRiskPolicyOptimizer(params)
+        optimizer = mut.DRiskPolicyOptimizer(params)
         optimizer.iterate()
 
     @pytest.mark.parametrize("device", ("cpu", "cuda"))
@@ -252,6 +252,5 @@ class TestDRiskOptimizer:
         params = self.initialize_problem(device, policy, self.cfg)
         params.policy_params_0 = policy.get_parameters()
 
-        optimizer = mut.FirstOrderDRiskNNPolicyOptimizer(params)
+        optimizer = mut.DRiskPolicyOptimizer(params)
         optimizer.iterate()
-"""
