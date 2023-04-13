@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 import hydra
 from omegaconf import DictConfig
 
-from score_po.policy_optimizer import PolicyOptimizerParams, FirstOrderNNPolicyOptimizer
+from score_po.policy_optimizer import PolicyOptimizerParams, PolicyOptimizer
 from score_po.dynamical_system import DynamicalSystem
 from score_po.costs import QuadraticCost
 from score_po.policy import NNPolicy
@@ -28,16 +28,15 @@ def main(cfg: DictConfig):
     params.cost = cost
     
     # 4. Set up policy and initial guess.
-    network = MLP(2, 2, [128, 128])
+    network = MLP(2, 2, [128, 128, 128])
     policy = NNPolicy(2, 2, network)
     params.policy = policy
-    params.policy_params_0 = policy.get_parameters()
     
     # 5. Load rest of the parameters.
     params.load_from_config(cfg)
 
     # 6. Run the optimizer.
-    optimizer = FirstOrderNNPolicyOptimizer(params)
+    optimizer = PolicyOptimizer(params)
     optimizer.iterate()
 
     # 7. Run the policy.

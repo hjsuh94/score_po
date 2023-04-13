@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 import hydra
 from omegaconf import DictConfig
 
-from score_po.policy_optimizer import PolicyOptimizerParams, FirstOrderPolicyOptimizer
+from score_po.policy_optimizer import PolicyOptimizerParams, PolicyOptimizer
 from score_po.dynamical_system import DynamicalSystem
 from score_po.costs import QuadraticCost
 from score_po.policy import TimeVaryingStateFeedbackPolicy
@@ -30,13 +30,12 @@ def main(cfg: DictConfig):
     # 4. Set up policy and initial guess.
     policy = TimeVaryingStateFeedbackPolicy(2, 2, cfg.policy.T)
     params.policy = policy
-    params.policy_params_0 = policy.get_parameters()
     
     # 5. Load rest of the parameters.
     params.load_from_config(cfg)
 
     # 6. Run the optimizer.
-    optimizer = FirstOrderPolicyOptimizer(params)
+    optimizer = PolicyOptimizer(params)
     optimizer.iterate()
 
     # 7. Run the policy.
@@ -50,7 +49,7 @@ def main(cfg: DictConfig):
     plt.figure()
     for b in range(params.batch_size):
         plt.plot(x_trj[b, :, 0], x_trj[b, :, 1], "springgreen")
-    plt.savefig("trajopt.png")
+    plt.savefig("trajopt_feedback.png")
     plt.close()
 
 if __name__ == "__main__":
