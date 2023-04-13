@@ -168,3 +168,39 @@ class TestEnsemble:
             2.0 * ensemble.get_variance(x_batch).detach().cpu().numpy(),
             ensemble.get_variance(x_batch, metric=2.0 * metric).detach().cpu().numpy(),
         )
+
+
+class TestNormalizer:
+    @pytest.mark.parametrize("device", ("cpu", "cuda"))
+    def test_constructor(self, device):
+        dut1 = mut.Normalizer(k=None, b=None)
+        dut1.to(device)
+        assert dut1.k.device.type == device
+        assert dut1.b.device.type == device
+        assert dut1.k.item() == 1
+        assert dut1.b.item() == 0
+        assert len(dut1.state_dict()) == 2
+        assert len(list(dut1.parameters())) == 0
+
+        dut2 = mut.Normalizer(k=torch.tensor([1.0, 3.0]), b=torch.tensor([2.0, 4]))
+        dut2.to(device)
+        assert dut2.k.device.type == device
+        assert dut2.b.device.type == device
+        np.testing.assert_allclose(dut2.k.cpu(), np.array([1.0, 3.0]))
+        np.testing.assert_allclose(dut2.b.cpu(), np.array([2.0, 4.0]))
+        assert len(dut2.state_dict()) == 2
+        assert len(list(dut2.parameters())) == 0
+
+    @pytest.mark.parametrize("device", ("cpu", "cuda"))
+    def test_forward(self, device):
+        dut = mut.Normalizer(k=torch.tensor([1.0, 3.0]), b=torch.tensor([2.0, 4.0])).to(
+            device
+        )
+        x = torch.tensor([[1.0, 2.0], [3.0, 4.0], [5.0, 6]]).to(device)
+        xbar = dut(x)
+        assert (x.shape == xbar.shape)
+
+        np.testing.assert_allclose(xbar.cpu(), ((x - dut.b) / dut.k).cpu())
+
+        x_denormalized = dut.denormalize(xbar)
+        np.testing.assert_allclose(x_denormalized.cpu(), x.cpu())
