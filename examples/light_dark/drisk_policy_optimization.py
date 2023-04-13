@@ -14,7 +14,7 @@ from score_po.dynamical_system import DynamicalSystem
 from score_po.costs import QuadraticCost
 from score_po.policy import NNPolicy
 from score_po.nn import MLP
-from score_po.score_matching import ScoreFunctionEstimator
+from score_po.score_matching import ScoreEstimator
 
 # 1. Set up parameters.
 params = PolicyOptimizerParams()
@@ -58,7 +58,7 @@ params.policy_params_0 = policy.get_parameters()
 
 # 4. Set up the score function estimator
 score_network = MLP(5, 4, [128, 128])
-sf = ScoreFunctionEstimator(score_network, 2, 2)
+sf = ScoreEstimator(score_network, 2, 2)
 sf.load_network_parameters("examples/light_dark/nn_weights_ds.pth")
 
 # debug.

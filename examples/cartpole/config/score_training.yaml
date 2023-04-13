@@ -15,7 +15,7 @@ train:
   wandb:
     enabled: ${user.wandb_enabled}
     project: score_po
-    name: ${now:%Y.%m.%d-%H.%M.%S}_acrobot_score
+    name: ${now:%Y.%m.%d-%H.%M.%S}_cartpole_score
     entity: ${user.wandb_entity}
   lr: 1e-3
   epochs: 500

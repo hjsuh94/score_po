@@ -4,7 +4,7 @@ policy:
   x0_lower: [0.28, 0.18]
   batch_size: 16 # 1 for trajopt.
   std: 1e-2
-  lr: 1e-8
+  lr: 1e-4
   max_iters: 3
   save_best_model: null
   load_ckpt: null
