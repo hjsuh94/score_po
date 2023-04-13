@@ -21,7 +21,7 @@ from score_po.score_matching import ScoreEstimator
 from examples.light_dark.dynamics import SingleIntegrator
 
 
-@hydra.main(config_path="../config", config_name="drisk_trajopt")
+@hydra.main(config_path="../config", config_name="drisk_score_trajopt")
 def main(cfg: DictConfig):
     # 1. Set up parameters.
     params = DRiskScorePolicyOptimizerParams()
