@@ -36,7 +36,7 @@ class TestPolicyConfig:
         np.testing.assert_equal(params.device, "cuda")
 
     def test_drisk_cfg_load(self):
-        params = mut.DRiskPolicyOptimizerParams()
+        params = mut.DRiskScorePolicyOptimizerParams()
         with initialize(config_path="./config"):
             cfg = compose(config_name="policy_params")
             params.load_from_config(cfg)
@@ -191,7 +191,7 @@ class TestPolicyOptimizerNNDynamics:
         optimizer.iterate()
 
 
-class TestDRiskOptimizer:
+class TestDRiskScoreOptimizer:
     def initialize_problem(self, device, policy, cfg):
         costs = QuadraticCost()
         costs.load_from_config(cfg)
@@ -204,7 +204,7 @@ class TestDRiskOptimizer:
         sf = ScoreEstimator(2, 2, score_network)
         sf.load_network_parameters("tests/score_po/weights/sf_weights.pth")
 
-        params = mut.DRiskPolicyOptimizerParams()
+        params = mut.DRiskScorePolicyOptimizerParams()
         params.cost = costs
         params.dynamical_system = dynamics
         params.policy = policy
@@ -222,7 +222,7 @@ class TestDRiskOptimizer:
         policy = TimeVaryingOpenLoopPolicy(2, 2, self.cfg.policy.T)
         params = self.initialize_problem(device, policy, self.cfg)
 
-        optimizer = mut.DRiskPolicyOptimizer(params)
+        optimizer = mut.DRiskScorePolicyOptimizer(params)
         optimizer.iterate()
 
     @pytest.mark.parametrize("device", ("cpu", "cuda"))
@@ -234,7 +234,7 @@ class TestDRiskOptimizer:
         policy = TimeVaryingStateFeedbackPolicy(2, 2, self.cfg.policy.T)
         params = self.initialize_problem(device, policy, self.cfg)
 
-        optimizer = mut.DRiskPolicyOptimizer(params)
+        optimizer = mut.DRiskScorePolicyOptimizer(params)
         optimizer.iterate()
 
     @pytest.mark.parametrize("device", ("cpu", "cuda"))
@@ -247,5 +247,5 @@ class TestDRiskOptimizer:
         policy = NNPolicy(2, 2, network)
         params = self.initialize_problem(device, policy, self.cfg)
 
-        optimizer = mut.DRiskPolicyOptimizer(params)
+        optimizer = mut.DRiskScorePolicyOptimizer(params)
         optimizer.iterate()

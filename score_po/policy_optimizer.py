@@ -250,7 +250,7 @@ class PolicyOptimizer:
 
 
 @dataclass
-class DRiskPolicyOptimizerParams(PolicyOptimizerParams):
+class DRiskScorePolicyOptimizerParams(PolicyOptimizerParams):
     beta: float = 1.0
     sf: ScoreEstimator = None
 
@@ -262,13 +262,21 @@ class DRiskPolicyOptimizerParams(PolicyOptimizerParams):
         self.beta = cfg.policy.beta
 
 
-class DRiskPolicyOptimizer(PolicyOptimizer):
-    def __init__(self, params: DRiskPolicyOptimizerParams, **kwargs):
+class DRiskScorePolicyOptimizer(PolicyOptimizer):
+    def __init__(self, params: DRiskScorePolicyOptimizerParams, **kwargs):
         super().__init__(params=params, **kwargs)
         self.beta = params.beta
         self.sf = params.sf
 
     def get_score_cost(self, x0_batch, noise_trj_batch):
+        """
+        Here, our goal is to compute a quantity such that when autodiffed w.r.t. θ, we
+        obtain the score w.r.t parameters, compute ∇_θ log p(z). Using the chain rule,
+        we break down the gradient into ∇_θ log p(z) = ∇_z log p(z) *  ∇_θ z.
+        Since we don't want to compute ∇_θ z manually, we calculate the quantity
+        (∇_z log p(z) * z) and and detach ∇_z log p(z) from the computation graph
+        so that ∇_θ(∇_z log p(z) * z) = ∇_z log p(z) * ∇_θ z.
+        """
         B = x0_batch.shape[0]
 
         x_trj_batch, u_trj_batch = self.rollout_policy_batch(x0_batch, noise_trj_batch)
@@ -281,6 +289,9 @@ class DRiskPolicyOptimizer(PolicyOptimizer):
         for t in range(self.params.T):
             zt_batch = z_trj_batch[:, t, :]
             sz_trj_batch[:, t, :] = self.sf.get_score_z_given_z(zt_batch)
+
+        # Here, ∇_z log p(z) is detached from the computation graph so that we ignore
+        # terms related to ∂(∇_z log p(z))/∂θ.
         sz_trj_batch = sz_trj_batch.clone().detach()
 
         score = (
