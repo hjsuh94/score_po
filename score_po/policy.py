@@ -76,6 +76,7 @@ class NNPolicy(Policy):
         self.dim_x = dim_x
         self.dim_u = dim_u
         self.net = network
+        assert(isinstance(self.net, nn.Module))
         self.dim_params = len(self.net.get_vectorized_parameters())
 
     def forward(self, x_batch, t):
