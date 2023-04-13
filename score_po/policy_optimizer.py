@@ -93,7 +93,7 @@ class PolicyOptimizer:
         for t in range(self.params.T):
             # we assume both dynamics and actions silently handle device
             # depending on which device x_trj and u_trj were on.
-            u_trj[t] = self.policy.get_action(x_trj[t], t) + noise_trj[t]
+            u_trj[t] = self.policy(x_trj[t], t) + noise_trj[t]
             x_trj[t + 1] = self.ds.dynamics(x_trj[t], u_trj[t])
         return x_trj, u_trj
 
@@ -112,10 +112,7 @@ class PolicyOptimizer:
         x_trj_batch = torch.hstack((x_trj_batch, x0_batch[:, None, :]))
 
         for t in range(self.params.T):
-            u_t_batch = (
-                self.policy.get_action_batch(x_trj_batch[:, t, :], t)
-                + noise_trj_batch[:, t, :]
-            )
+            u_t_batch = self.policy(x_trj_batch[:, t, :], t) + noise_trj_batch[:, t, :]
             u_trj_batch = torch.hstack((u_trj_batch, u_t_batch[:, None, :]))
             x_next_batch = self.ds.dynamics_batch(
                 x_trj_batch[:, t, :], u_trj_batch[:, t, :]
@@ -198,6 +195,7 @@ class PolicyOptimizer:
             (self.params.batch_size, self.params.T, self.ds.dim_u)
         ).to(self.params.device)
         self.policy = self.policy.to(self.params.device)
+        self.policy.train()
 
         x0_batch = self.sample_initial_state_batch()
         cost = torch.mean(self.evaluate_cost_batch(x0_batch, zero_noise_trj))
@@ -304,4 +302,4 @@ class DRiskPolicyOptimizer(PolicyOptimizer):
 
         cost_mean = torch.mean(self.evaluate_cost_batch(x0_batch, noise_trj_batch))
         score_cost = self.get_score_cost(x0_batch, noise_trj_batch)
-        return cost_mean + self.beta + score_cost
+        return cost_mean + self.beta * score_cost

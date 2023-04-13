@@ -75,7 +75,6 @@ class TestPolicyOptimizerKnownDynamics:
         params.cost = costs
         params.dynamical_system = SingleIntegrator()
         params.policy = policy
-        params.policy_params_0 = policy.get_parameters()
         params.load_from_config(cfg)
         params.to_device(device)
         return params
@@ -140,7 +139,7 @@ class TestPolicyOptimizerKnownDynamics:
         optimizer.iterate()
 
 
-class TestFirstOrderPolicyOptimizerNNDynamics:
+class TestPolicyOptimizerNNDynamics:
     def initialize_problem(self, device, policy, cfg):
         costs = QuadraticCost()
         costs.load_from_config(cfg)
@@ -153,7 +152,6 @@ class TestFirstOrderPolicyOptimizerNNDynamics:
         params.cost = costs
         params.dynamical_system = dynamics
         params.policy = policy
-        params.policy_params_0 = policy.get_parameters()
         params.load_from_config(cfg)
         params.to_device(device)
         return params
@@ -223,7 +221,6 @@ class TestDRiskOptimizer:
 
         policy = TimeVaryingOpenLoopPolicy(2, 2, self.cfg.policy.T)
         params = self.initialize_problem(device, policy, self.cfg)
-        params.policy_params_0 = policy.get_parameters()
 
         optimizer = mut.DRiskPolicyOptimizer(params)
         optimizer.iterate()
@@ -236,7 +233,6 @@ class TestDRiskOptimizer:
 
         policy = TimeVaryingStateFeedbackPolicy(2, 2, self.cfg.policy.T)
         params = self.initialize_problem(device, policy, self.cfg)
-        params.policy_params_0 = policy.get_parameters()
 
         optimizer = mut.DRiskPolicyOptimizer(params)
         optimizer.iterate()
@@ -250,7 +246,6 @@ class TestDRiskOptimizer:
         network = MLP(2, 2, [128, 128])
         policy = NNPolicy(2, 2, network)
         params = self.initialize_problem(device, policy, self.cfg)
-        params.policy_params_0 = policy.get_parameters()
 
         optimizer = mut.DRiskPolicyOptimizer(params)
         optimizer.iterate()
