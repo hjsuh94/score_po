@@ -14,7 +14,7 @@ import wandb
 
 import wandb
 
-from score_po.nn import AdamOptimizerParams, TrainParams, train_network
+from score_po.nn import AdamOptimizerParams, TrainParams, train_network, Normalizer
 
 """
 Classes for training score functions.
@@ -33,27 +33,67 @@ class ScoreEstimator:
     without being conditioned on noise.
     """
 
-    def __init__(self, dim_x, dim_u, network):
+    def __init__(
+        self, dim_x, dim_u, network, z_normalizer: Optional[Normalizer] = None
+    ):
+        """
+        We denote z̅ as z after normalization, namely
+        z̅ = (z - b) / k
+        where k is the normalization constant.
+        The network estimate ∇_z̅ log p(z̅), the score of the normalized ̅z̅, based on
+        which we compute ∇_z log p(z), the score of the un-normalized z.
+
+        Args:
+          network: A network ϕ that outputs ϕ(z̅) ≈ ∇_z̅ log p(z̅), where z̅ is the
+          normalized data.
+          z_normalizer: The normalizer for z.
+        """
         self.dim_x = dim_x
         self.dim_u = dim_u
         self.net = network
         self.sigma = 0.1
+        self.z_normalizer: Normalizer = (
+            Normalizer(k=None, b=None) if z_normalizer is None else z_normalizer
+        )
         self.check_input_consistency()
 
     def check_input_consistency(self):
-        if self.net.dim_in is not (self.dim_x + self.dim_u):
+        if hasattr(self.net, "dim_in") and self.net.dim_in is not (
+            self.dim_x + self.dim_u
+        ):
             raise ValueError("Inconsistent input size of neural network.")
-        if self.net.dim_out is not (self.dim_x + self.dim_u):
+        if hasattr(self.net, "dim_out") and self.net.dim_out is not (
+            self.dim_x + self.dim_u
+        ):
             raise ValueError("Inconsistent output size of neural network.")
 
-    def get_score_z_given_z(self, input, eval=True):
+    def _get_score_zbar(self, input, eval=True):
+        """
+        Compute the score ∇_z̅ log p(z̅) for the normalized z̅
+
+        We know that z̅ = (z−b)/k, hence p(z̅) = k*p(z) (based on transforming a
+        continuous-valued random variable), hence log p(z̅) = log k + log p(z).
+        As a result, ∇_z̅ log p(z̅) = ∇_z̅ log p(z) = k * ∇_z log p(z)
+        """
+        self.z_normalizer.to(input.device)
         self.net.to(input.device)
         if eval:
             self.net.eval()
         else:
             self.net.train()
+        zbar = self.z_normalizer(input)
+        return self.net(zbar)
 
-        return self.net(input)
+    def get_score_z_given_z(self, input, eval=True):
+        """
+        Compute ∇_z log p(z).
+
+        We know that z̅ = (z−b)/k, hence p(z̅) = k*p(z) (based on transforming a
+        continuous-valued random variable), hence log p(z̅) = log k + log p(z).
+        As a result, ∇_z̅ log p(z̅) = ∇_z̅ log p(z) = k * ∇_z log p(z), namely
+        ∇_z log p(z) = 1/k * ∇_z̅ log p(z̅)
+        """
+        return self._get_score_zbar(input, eval) / self.z_normalizer.k
 
     def get_score_x_given_z(self, z, eval=True):
         """Give ∇_x log p(z) part of the score function."""
@@ -83,10 +123,13 @@ class ScoreEstimator:
             sigma, a scalar variable.
         Adopted from Song's codebase.
         """
-        databar = data + torch.randn_like(data) * sigma
 
-        target = -1 / (sigma**2) * (databar - data)
-        scores = self.get_score_z_given_z(databar, eval=False)
+        # Normalize the data
+        data_normalized = self.z_normalizer.to(data.device)(data)
+        databar = data_normalized + torch.randn_like(data) * sigma
+
+        target = -1 / (sigma**2) * (databar - data_normalized)
+        scores = self._get_score_zbar(databar, eval=False)
 
         target = target.view(target.shape[0], -1)
         scores = scores.view(scores.shape[0], -1)
@@ -101,12 +144,13 @@ class ScoreEstimator:
             sigma, a scalar variable.
         Adopted from Song's codebase.
         """
-        databar = data + torch.randn_like(data) * sigma
+        data_normalized = self.z_normalizer.to(data.device)(data)
+        databar = data_normalized + torch.randn_like(data) * sigma
         databar.requires_grad = True
 
         vectors = torch.randn_like(databar)
 
-        grad1 = self.get_score_z_given_z(databar)
+        grad1 = self._get_score_zbar(databar)
         gradv = torch.sum(grad1 * vectors)
         grad2 = autograd.grad(gradv, databar, create_graph=True)[0]
         grad1 = grad1.view(databar.shape[0], -1)
@@ -148,8 +192,22 @@ class ScoreEstimator:
     def save_network_parameters(self, filename):
         torch.save(self.net.state_dict(), filename)
 
+    def save_parameters(self, filename):
+        torch.save(
+            {
+                "net": self.net.state_dict(),
+                "z_normalizer": self.z_normalizer.state_dict(),
+            },
+            filename,
+        )
+
     def load_network_parameters(self, filename):
         self.net.load_state_dict(torch.load(filename))
+
+    def load_parameters(self, filename):
+        load_data = torch.load(filename)
+        self.net.load_state_dict(load_data["net"])
+        self.z_normalizer.load_state_dict(load_data["z_normalizer"])
 
 
 class NoiseConditionedScoreEstimator(ScoreEstimator):
@@ -315,9 +373,7 @@ class NoiseConditionedScoreEstimator(ScoreEstimator):
                         step=epoch,
                     )
                 else:
-                    print(
-                        f"epoch {epoch}, loss {loss_eval.item()}"
-                    )
+                    print(f"epoch {epoch}, loss {loss_eval.item()}")
                 if params.save_best_model is not None and loss_eval.item() < best_loss:
                     model_path = os.path.join(os.getcwd(), params.save_best_model)
                     torch.save(self.net.state_dict(), model_path)
