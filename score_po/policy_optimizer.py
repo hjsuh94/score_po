@@ -86,16 +86,10 @@ class PolicyOptimizer:
             x0: initial condition of shape (dim_x)
             noise_trj: (T, dim_u) noise output on the output of trajectory.
         """
-        x_trj = torch.zeros((self.params.T + 1, self.ds.dim_x)).to(self.params.device)
-        u_trj = torch.zeros((self.params.T, self.ds.dim_u)).to(self.params.device)
-        x_trj[0] = x0.to(self.params.device)
-
-        for t in range(self.params.T):
-            # we assume both dynamics and actions silently handle device
-            # depending on which device x_trj and u_trj were on.
-            u_trj[t] = self.policy(x_trj[t], t) + noise_trj[t]
-            x_trj[t + 1] = self.ds.dynamics(x_trj[t], u_trj[t])
-        return x_trj, u_trj
+        x0_batch = x0.unsqueeze(0)
+        noise_trj_batch = noise_trj.unsqueeze(0)
+        x_trj, u_trj = self.rollout_policy_batch(x0_batch, noise_trj_batch)
+        return x_trj.squeeze(0), u_trj.squeeze(0)
 
     def rollout_policy_batch(
         self, x0_batch: torch.Tensor, noise_trj_batch: torch.Tensor

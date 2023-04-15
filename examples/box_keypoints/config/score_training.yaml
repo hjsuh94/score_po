@@ -1,0 +1,31 @@
+defaults:
+  - user: terry
+
+hydra:
+  run:
+    dir: ${user.run_dir}
+
+box_width: 0.1
+box_height: 0.2
+dataset_size: 200000
+plot_data: True
+nn_layers: [128, 128, 128, 128, 128]
+
+max_iters: 400
+step_size: 1e-3
+
+train:
+  wandb:
+    enabled: ${user.wandb_enabled}
+    project: score_po
+    dir: ${user.run_dir}
+    name: ${now:%Y.%m.%d-%H.%M.%S}_keypoint_score
+    entity: ${user.wandb_entity}  
+  adam:
+    lr: 1e-4
+    epochs: 100
+    batch_size: 1024
+  dataset_split: null    
+  save_best_model: checkpoint.pth
+  load_ckpt: null
+  device: "cuda"  
