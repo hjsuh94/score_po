@@ -42,8 +42,12 @@ def main(cfg: DictConfig):
     # 5. Set up score optimizer.
     network = MLP(4, 4, [128, 128, 128])
     sf = ScoreEstimator(2, 2, network)
-    sf.load_network_parameters(
-        os.path.join(get_original_cwd(), "examples/light_dark/weights/checkpoint.pth")
+    sf.load_state_dict(
+        torch.load(
+            os.path.join(
+                get_original_cwd(), "examples/light_dark/weights/checkpoint.pth"
+            )
+        )
     )
     params.sf = sf
 

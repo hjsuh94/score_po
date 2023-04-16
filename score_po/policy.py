@@ -72,12 +72,6 @@ class Policy(nn.Module):
     def forward(self, x_batch, t):
         return self.u_clip(self._unclipped_u(x_batch, t))
 
-    def save_parameters(self, filename):
-        file_dir = os.path.dirname(filename)
-        if not os.path.exists(file_dir):
-            os.makedirs(file_dir, exists_ok=True)
-        torch.save(self.state_dict(), filename)
-
 
 class TimeVaryingOpenLoopPolicy(Policy):
     """

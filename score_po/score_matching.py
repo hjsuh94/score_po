@@ -14,14 +14,14 @@ import wandb
 
 import wandb
 
-from score_po.nn import AdamOptimizerParams, TrainParams, train_network, Normalizer
+from score_po.nn import AdamOptimizerParams, TrainParams, train_network, Normalizer, save_module
 
 """
 Classes for training score functions.
 """
 
 
-class ScoreEstimator:
+class ScoreEstimator(torch.nn.Module):
     """
     Score function estimator that stores the object
     ∇_z log p(z): R^(dim_x + dim_u) -> R^(dim_x + dim_u), where
@@ -50,6 +50,7 @@ class ScoreEstimator:
           normalized data.
           z_normalizer: The normalizer for z.
         """
+        super().__init__()
         self.dim_x = dim_x
         self.dim_u = dim_u
         self.net = network
@@ -92,6 +93,9 @@ class ScoreEstimator:
         self.z_normalizer.to(z.device)
         zbar = self.z_normalizer(z)
         return self._get_score_zbar_given_zbar(zbar, eval) / self.z_normalizer.k
+
+    def forward(self, z, eval=True):
+        return self.get_score_z_given_z(z, eval)
 
     def get_score_x_given_z(self, z, eval=True):
         """Give ∇_x log p(z) part of the score function."""
@@ -192,26 +196,6 @@ class ScoreEstimator:
         loss_fn = lambda x_batch, net: self.evaluate_loss(x_batch[0], sigma, mode)
         loss_lst = train_network(self.net, params, dataset, loss_fn, split)
         return loss_lst
-
-    def save_network_parameters(self, filename):
-        torch.save(self.net.state_dict(), filename)
-
-    def save_parameters(self, filename):
-        torch.save(
-            {
-                "net": self.net.state_dict(),
-                "z_normalizer": self.z_normalizer.state_dict(),
-            },
-            filename,
-        )
-
-    def load_network_parameters(self, filename):
-        self.net.load_state_dict(torch.load(filename))
-
-    def load_parameters(self, filename):
-        load_data = torch.load(filename)
-        self.net.load_state_dict(load_data["net"])
-        self.z_normalizer.load_state_dict(load_data["z_normalizer"])
 
 
 class NoiseConditionedScoreEstimator(ScoreEstimator):

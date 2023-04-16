@@ -146,7 +146,7 @@ class TestPolicyOptimizerNNDynamics:
 
         network = MLP(4, 2, [128, 128])
         dynamics = NNDynamicalSystem(2, 2, network)
-        dynamics.load_network_parameters("tests/score_po/weights/dynamics.pth")
+        dynamics.load_state_dict(torch.load("tests/score_po/weights/dynamics.pth"))
 
         params = mut.PolicyOptimizerParams()
         params.cost = costs
@@ -198,11 +198,11 @@ class TestDRiskScoreOptimizer:
 
         network = MLP(4, 2, [128, 128])
         dynamics = NNDynamicalSystem(2, 2, network)
-        dynamics.load_network_parameters("tests/score_po/weights/dynamics.pth")
+        dynamics.load_state_dict(torch.load("tests/score_po/weights/dynamics.pth"))
 
         score_network = MLP(4, 4, [512])
         sf = ScoreEstimator(2, 2, score_network)
-        sf.load_network_parameters("tests/score_po/weights/sf_weights.pth")
+        sf.load_state_dict(torch.load("tests/score_po/weights/sf_weights.pth"))
 
         params = mut.DRiskScorePolicyOptimizerParams()
         params.cost = costs
@@ -210,7 +210,7 @@ class TestDRiskScoreOptimizer:
         params.policy = policy
         params.sf = sf
         params.load_from_config(cfg)
-        params.device = device  # overwrite device for testing
+        params.to_device(device)
         return params
 
     @pytest.mark.parametrize("device", ("cpu", "cuda"))

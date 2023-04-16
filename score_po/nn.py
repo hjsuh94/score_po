@@ -153,12 +153,6 @@ class MLP(nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.mlp(x)
 
-    def save_network_parameters(self, filename):
-        torch.save(self.state_dict(), filename)
-
-    def load_network_parameters(self, filename):
-        self.load_state_dict(torch.load(filename))
-
 
 class EnsembleNetwork(nn.Module):
     """
@@ -236,23 +230,11 @@ class EnsembleNetwork(nn.Module):
         if not os.path.exists(foldername):
             os.mkdir(foldername)
         for k, network in enumerate(self.network_lst):
-            network.save_network_parameters(
-                os.path.join(foldername, "{:02d}.pth".format(k))
-            )
+            save_module(network, os.path.join(foldername, "{:02d}.pth".format(k)))
 
     def load_ensemble(self, foldername):
         for k, network in enumerate(self.network_lst):
-            network.load_network_parameters(
-                os.path.join(foldername, "{:02d}.pth".format(k))
-            )
-
-
-def save_net(net: nn.Module, model_name: str):
-    model_path = os.path.join(os.getcwd(), model_name)
-    model_dir = os.path.dirname(model_path)
-    if not os.path.exists(model_dir):
-        os.makedirs(model_dir)
-    torch.save(net.state_dict(), model_path)
+            network.load_state_dict(os.path.join(foldername, "{:02d}.pth".format(k)))
 
 
 def tuple_to_device(tup, device):
@@ -337,7 +319,7 @@ def train_network(
                     step=epoch,
                 )
             if params.save_best_model is not None and loss_eval.item() < best_loss:
-                save_net(net, params.save_best_model)
+                save_module(net, os.path.join(os.getcwd(), params.save_best_model))
                 best_loss = loss_eval.item()
 
     return loss_lst
@@ -386,7 +368,7 @@ def train_network_sampling(
         if params.wandb_params.enabled:
             wandb.log({"total loss": loss_eval.item()}, step=epoch)
         if params.save_best_model is not None and loss_eval.item() < best_loss:
-            save_net(net, params.save_best_model)
+            save_module(net, os.path.join(os.getcwd(), params.save_best_model))
             best_loss = loss_eval.item()
 
     return loss_lst
@@ -414,3 +396,10 @@ class Normalizer(nn.Module):
 
     def denormalize(self, xbar):
         return xbar * self.k + self.b
+
+
+def save_module(nn_module: torch.nn.Module, filename: str):
+    file_dir = os.path.dirname(filename)
+    if not os.path.exists(file_dir):
+        os.makedirs(file_dir, exist_ok=True)
+    torch.save(nn_module.state_dict(), filename)
