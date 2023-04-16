@@ -6,7 +6,7 @@ from typing import Literal
 from hydra import initialize, compose
 
 import score_po.score_matching as mut
-from score_po.nn import MLP, TrainParams
+from score_po.nn import MLP, TrainParams, Normalizer
 
 
 class TestScoreEstimator:
@@ -21,14 +21,43 @@ class TestScoreEstimator:
         # Doesn't throw since 3 + 2 = 5.
         sf = mut.ScoreEstimator(3, 2, network)
 
+    def test_constructor_with_normalizer(self):
+        network = MLP(5, 5, [128, 128])
+
+        sf = mut.ScoreEstimator(
+            3,
+            2,
+            network,
+            z_normalizer=Normalizer(
+                k=torch.tensor([1, 2.0, 3.0, 4.0, 5]),
+                b=torch.tensor([0, 0.5, 1, 1.5, 2]),
+            ),
+        )
+
     @pytest.mark.parametrize("device", ("cpu", "cuda"))
-    def test_score_eval(self, device: Literal["cpu", "cuda"]):
+    @pytest.mark.parametrize(
+        "z_normalizer",
+        (
+            None,
+            Normalizer(k=torch.tensor([2.0, 3.0, 4.0]), b=torch.tensor([-1, -2, -3.0])),
+        ),
+    )
+    def test_score_eval(self, device: Literal["cpu", "cuda"], z_normalizer):
         x_tensor = torch.rand(100, 2).to(device)
         u_tensor = torch.rand(100, 1).to(device)
         z_tensor = torch.cat((x_tensor, u_tensor), dim=1)
 
         network = MLP(3, 3, [128, 128])
-        sf = mut.ScoreEstimator(2, 1, network)
+        sf = mut.ScoreEstimator(2, 1, network, z_normalizer)
+
+        score_z_expected = (
+            network.to(device)(sf.z_normalizer.to(device)(z_tensor))
+            / sf.z_normalizer.to(device).k
+        )
+        np.testing.assert_allclose(
+            sf.get_score_z_given_z(z_tensor).cpu().detach().numpy(),
+            score_z_expected.cpu().detach().numpy(),
+        )
 
         np.testing.assert_equal(
             sf.get_score_z_given_z(z_tensor).shape, torch.Size([100, 3])
