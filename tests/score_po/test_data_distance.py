@@ -157,6 +157,9 @@ class TestDataDistanceEstimator:
 
         # Doesn't throw since input is 5.
         dde = mut.DataDistanceEstimator(5, network, metric, domain_lb, domain_ub)
+        assert ("metric" in dde.state_dict())
+        assert ("domain_lb" in dde.state_dict())
+        assert ("domain_ub" in dde.state_dict())
 
     @pytest.mark.parametrize("device", ("cpu", "cuda"))
     def test_distance_eval(self, device: Literal["cpu", "cuda"]):

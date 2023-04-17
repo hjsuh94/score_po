@@ -66,7 +66,7 @@ def single_shooting(
         Qd=torch.diag(torch.tensor([1, 1, 0.1, 0.1])),
         xd=torch.tensor([0, np.pi, 0, 0]),
     )
-    params.cost.params_to_device(device)
+    params.cost.to(device)
     params.dynamical_system = dynamical_system
     params.policy = TimeVaryingOpenLoopPolicy(dim_x=4, dim_u=1, T=T)
     if cfg.load_swingup_policy is None:
@@ -86,6 +86,7 @@ def single_shooting(
     params.wandb_params = WandbParams()
     params.wandb_params.load_from_config(cfg, "policy")
     params.save_best_model = cfg.save_swingup_policy
+    params.to_device(device)
 
     policy_optimizer = FirstOrderPolicyOptimizer(params)
     policy_optimizer.iterate()
@@ -104,7 +105,7 @@ def main(cfg: DictConfig):
         device=device,
     )
 
-    nn_plant.load_network_parameters(cfg.dynamics_load_ckpt)
+    nn_plant.load_state_dict(torch.load(cfg.dynamics_load_ckpt))
     plant = CartpolePlant(dt=0.1)
     single_shooting(
         plant, x0=torch.tensor([0, 0, 0, 0.0], device=device), T=20, u_max=100, cfg=cfg

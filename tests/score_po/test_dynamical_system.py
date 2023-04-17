@@ -29,7 +29,7 @@ class TestNNDynamicalSystem:
     @pytest.mark.parametrize("device", ("cpu", "cuda"))
     def test_dynamics_eval(self, device: Literal["cpu", "cuda"]):
         network = MLP(3, 2, [128, 128])
-        dynamics = mut.NNDynamicalSystem(2, 1, network)
+        dynamics = mut.NNDynamicalSystem(2, 1, network).to(device)
 
         x_tensor = torch.rand(100, 2).to(device)
         u_tensor = torch.rand(100, 1).to(device)
