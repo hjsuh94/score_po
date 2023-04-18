@@ -8,3 +8,4 @@ wandb_entity: daihongkai
 dynamics_load_ckpt: /home/hongkaidai/score_po_data/cartpole/2023-04-11/11-24-04/checkpoint/checkpoint.pth
 load_swingup_policy: /home/hongkaidai/score_po_data/cartpole/2023-04-11/20-38-40/swingup_openloop_policy.pth
 save_swingup_policy: ${user.run_dir}/swingup_openloop_policy.pth
+save_score_ckpt: ${user.run_dir}/score/checkpoint.pth
