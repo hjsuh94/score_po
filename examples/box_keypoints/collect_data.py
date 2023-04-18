@@ -34,7 +34,7 @@ def main(cfg: DictConfig):
         else:
             raise ValueError
 
-        if not system.is_in_collision(x):
+        if (not system.is_in_collision(x)) and system.within_table(x):
             u = 0.2 * (np.random.rand(2) - 0.5)
             xnext = system.dynamics(x, u, record=False)
             keypts_x = system.get_keypoints(x, noise_std=cfg.noise_std)
