@@ -368,3 +368,23 @@ class NoiseConditionedScoreEstimator(ScoreEstimator):
                     best_loss = loss_eval.item()
 
         return loss_lst
+
+
+def langevin_dynamics(x0: torch.Tensor, score: torch.nn.Module, epsilon: float, steps: int):
+    """
+    Generate samples using Langevin dynamics
+    xₜ₊₁ = xₜ + ε/2*∇ₓ log p(xₜ) + √ε * noise
+    where noise ~ N(0, I)
+
+    Args:
+      x0: A batch of samples at the beginning. Size is (batch_size, x_size)
+      score: a torch Module that outputs ∇ₓ log p(x)
+      epsilon: ε in the documentation above. The step size.
+      steps: The total number of steps in Langenvin dynamics.
+    """
+    assert (epsilon > 0)
+    sqrt_epsilon = np.sqrt(epsilon)
+    x = x0.clone()
+    for _ in range(steps):
+        x = x + score(x) * epsilon / 2 + sqrt_epsilon * torch.randn_like(x)
+    return x

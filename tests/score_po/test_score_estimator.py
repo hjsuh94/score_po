@@ -95,3 +95,33 @@ class TestScoreEstimator:
         dataset = torch.utils.data.TensorDataset(data_tensor)
         sf.train_network(dataset, params, 0.1, split=False)
         sf.train_network(dataset, params, 0.3, split=True)
+
+
+class GaussianScore(torch.nn.Module):
+    """
+    Compute the score of a Gaussian distribution N(x, mu, sigma)
+    """
+
+    def __init__(self, mean: torch.Tensor, variance: torch.Tensor):
+        super().__init__()
+        self.register_buffer("mean", mean)
+        self.register_buffer("variance", variance)
+        self.register_buffer("variance_inv", torch.linalg.inv(self.variance))
+
+    def forward(self, x):
+        return -(x - self.mean) @ self.variance_inv
+
+
+@pytest.mark.parametrize("device", ("cpu", "cuda"))
+def test_langevin_dynamics(device):
+    torch.manual_seed(123)
+    mean = torch.tensor([10, 20.0], device=device)
+    variance = 0.1 * torch.eye(2, device=device)
+    gaussian_score = GaussianScore(mean, variance).to(device)
+
+    x0 = torch.randn((1000, 2), device=device)
+    epsilon = 1e-4
+    steps = 10000
+    xT = mut.langevin_dynamics(x0, gaussian_score, epsilon, steps)
+    assert xT.shape == x0.shape
+    np.testing.assert_allclose(torch.mean(xT, dim=0).cpu().detach().numpy(), mean.cpu().detach().numpy(), atol=0.2)
