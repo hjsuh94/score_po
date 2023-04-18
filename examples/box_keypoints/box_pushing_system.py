@@ -48,6 +48,10 @@ class PlanarPusherSystem(DynamicalSystem):
         self.h = 3.0  # simulation duration.
         self.h_mbp = 1e-3
         self.meshcat = StartMeshcat()
+        
+        # These dimensions come from the ycb dataset on 004_sugar_box.sdf
+        # The elements corresponds to box_width along [x,y,z] dimension.
+        self.box_dim = np.array([0.0867, 0.1703, 0.0391])
 
         # Parse model directives and add mbp.
         builder = DiagramBuilder()
@@ -104,8 +108,9 @@ class PlanarPusherSystem(DynamicalSystem):
     def planar_to_full_coordinates(self, x):
         """Given x in planar coordinates, convert to full coordinates."""
         theta = x[2]
-        q_wxyz = Quaternion(RotationMatrix(RollPitchYaw([0, 0, theta])).matrix()).wxyz()
-        p_xyz = np.array([x[0], x[1], 0.039100 / 2])
+        q_wxyz = Quaternion(
+            RotationMatrix(RollPitchYaw([0, 0, theta])).matrix()).wxyz()
+        p_xyz = np.array([x[0], x[1], self.box_dim[2]])
         return np.concatenate((q_wxyz, p_xyz))
 
     def full_to_planar_coordinates(self, x):
@@ -161,9 +166,9 @@ class PlanarPusherSystem(DynamicalSystem):
         # These dimensions come from the ycb dataset on 004_sugar_box.sdf
         # Make homogeneous coordinates
         keypoints = np.zeros((4, 5))
-        keypoints[0, :] = 0.0867 * canon_points[0, :] / 2
-        keypoints[1, :] = 0.1703 * canon_points[1, :] / 2
-        keypoints[2, :] = 0.0391
+        keypoints[0, :] = self.box_dim[0] * canon_points[0, :] / 2
+        keypoints[1, :] = self.box_dim[1] * canon_points[1, :] / 2
+        keypoints[2, :] = self.box_dim[2]
         keypoints[3, :] = 1
 
         # transform according to pose x.
