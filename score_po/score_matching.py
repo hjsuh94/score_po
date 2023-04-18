@@ -14,7 +14,13 @@ import wandb
 
 import wandb
 
-from score_po.nn import AdamOptimizerParams, TrainParams, train_network, Normalizer, save_module
+from score_po.nn import (
+    AdamOptimizerParams,
+    TrainParams,
+    train_network,
+    Normalizer,
+    save_module,
+)
 
 """
 Classes for training score functions.
@@ -368,3 +374,31 @@ class NoiseConditionedScoreEstimator(ScoreEstimator):
                     best_loss = loss_eval.item()
 
         return loss_lst
+
+
+def langevin_dynamics(
+    x0: torch.Tensor, score: torch.nn.Module, epsilon: float, steps: int
+) -> torch.Tensor:
+    """
+    Generate samples using Langevin dynamics
+    xₜ₊₁ = xₜ + ε/2*∇ₓ log p(xₜ) + √ε * noise
+    where noise ~ N(0, I)
+
+    Args:
+      x0: A batch of samples at the beginning. Size is (batch_size, x_size)
+      score: a torch Module that outputs ∇ₓ log p(x)
+      epsilon: ε in the documentation above. The step size.
+      steps: The total number of steps in Langenvin dynamics.
+    Returns:
+      x_history: the history of all xₜ.
+    """
+    assert epsilon > 0
+    sqrt_epsilon = np.sqrt(epsilon)
+    x_history = x0.repeat((steps,) + (1,) * x0.ndim)
+    for t in range(1, steps):
+        x_history[t] = (
+            x_history[t - 1]
+            + score(x_history[t - 1]) * epsilon / 2
+            + sqrt_epsilon * torch.randn_like(x_history[t - 1])
+        )
+    return x_history
