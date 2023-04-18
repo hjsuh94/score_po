@@ -3,8 +3,10 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.patches import Polygon
 import pickle
+import time
 
 import hydra
+from hydra.utils import get_original_cwd
 from omegaconf import DictConfig
 
 from score_po.dynamical_system import DynamicalSystem
@@ -13,7 +15,7 @@ from box_pushing_system import PlanarPusherSystem
 
 @hydra.main(config_path="./config", config_name="data_collection")
 def main(cfg: DictConfig):
-    system = PlanarPusherSystem()
+    system = PlanarPusherSystem(get_original_cwd())
 
     x_data = np.zeros((cfg.dataset_size, 5))
     u_data = np.zeros((cfg.dataset_size, 2))
@@ -22,6 +24,7 @@ def main(cfg: DictConfig):
     keypts_xnext_data = np.zeros((cfg.dataset_size, 10))
 
     count = 0
+    start_time = time.time()
     while count < cfg.dataset_size:
         if cfg.frame == "world":
             x = 0.8 * (np.random.rand(5) - 0.5)
@@ -44,6 +47,11 @@ def main(cfg: DictConfig):
             keypts_xnext_data[count, :] = keypts_xnext.flatten()
 
             count += 1
+            print(
+                "data_collected: {:07d} , time_elapsed: {:.2f}".format(
+                    count, time.time() - start_time
+                )
+            )
 
     data_dict = {
         "x": x_data,

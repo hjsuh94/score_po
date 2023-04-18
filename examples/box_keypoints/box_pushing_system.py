@@ -42,7 +42,7 @@ class PlanarPusherSystem(DynamicalSystem):
     u: velocity command on the pusher.
     """
 
-    def __init__(self):
+    def __init__(self, project_dir="."):
         super().__init__(dim_x=5, dim_u=2)
         self.is_differentiable = False
         self.h = 3.0  # simulation duration.
@@ -58,13 +58,10 @@ class PlanarPusherSystem(DynamicalSystem):
         self.mbp, self.sg = AddMultibodyPlantSceneGraph(builder, time_step=self.h_mbp)
         self.parser = Parser(self.mbp, self.sg)
         self.parser.package_map().PopulateFromFolder(
-            os.path.join(get_original_cwd(), "examples/box_keypoints")
-        )
+            os.path.join(project_dir, "examples/box_keypoints"))
         directives = LoadModelDirectives(
             os.path.join(
-                get_original_cwd(), "examples/box_keypoints/models/box_pushing.yaml"
-            )
-        )
+                project_dir, "examples/box_keypoints/models/box_pushing.yaml"))
         ProcessModelDirectives(directives, self.mbp, self.parser)
         self.mbp.Finalize()
 
@@ -237,5 +234,5 @@ class PlanarPusherSystem(DynamicalSystem):
         B = x_batch.shape[0]
         xnext_batch = np.zeros((B, 5))
         for b in range(B):
-            xnext_batch = self.dynamics_batch(x_batch[b], u_batch[b])
+            xnext_batch[b] = self.dynamics(x_batch[b], u_batch[b])
         return xnext_batch
