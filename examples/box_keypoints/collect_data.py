@@ -29,7 +29,7 @@ def main(cfg: DictConfig):
         if cfg.frame == "world":
             x = 0.8 * (np.random.rand(5) - 0.5)
         elif cfg.frame == "body":
-            x = 0.8 * (np.random.rand(5) - 0.5)
+            x = 0.4 * (np.random.rand(5) - 0.5)
             x[0:3] = 0.0
         else:
             raise ValueError
