@@ -51,3 +51,12 @@ class TestPlanarPushingDynamics:
         np.testing.assert_equal(keypts.shape, (2, 5))
         keypts = system.get_keypoints(x, noise_std=0.01)
         np.testing.assert_equal(keypts.shape, (2, 5))
+
+    def test_within_table(self):
+        system = mut.PlanarPusherSystem()
+        np.testing.assert_equal(
+            system.within_table(np.array([0.0, 1.0, 0.0])),
+            False)
+        np.testing.assert_equal(
+            system.within_table(np.array([0.0, 0.5, 0.0])),
+            True)

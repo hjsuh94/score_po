@@ -185,6 +185,10 @@ class PlanarPusherSystem(DynamicalSystem):
 
         return X_WK[0:2, :]
 
+    def within_table(self, x):
+        keypts = self.get_keypoints(x)
+        return np.all(np.abs(keypts) < 1.0)
+
     def dynamics(self, x, u, record=False):
         """Return dynamics. We assume that x is a non-colliding configuration."""
         assert not self.is_in_collision(x)
@@ -202,6 +206,9 @@ class PlanarPusherSystem(DynamicalSystem):
         self.mbp.SetPositions(mbp_context, self.pusher, x[3:5])
         self.mbp.SetVelocities(mbp_context, self.pusher, np.zeros(2))
 
+        # Here, we command a trajectory that is linear for [0, h/2],
+        # and constant between [h/2, h]. This allows time for the system
+        # to settle down.
         setpoints = np.zeros((4, 3))
         setpoints[0:2, 0] = x[3:5]
         setpoints[0:2, 1] = x[3:5] + u
