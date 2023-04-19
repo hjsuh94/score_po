@@ -39,7 +39,7 @@ class PlanarPusherSystem(DynamicalSystem):
     """
     Planar pushing dynamical system, implemented in Drake.
     x: position of box and pusher, [x_box, y_box, theta_box, x_pusher, y_pusher]
-    u: velocity command on the pusher.
+    u: delta position command on the pusher.
     """
 
     def __init__(self):
@@ -83,7 +83,6 @@ class PlanarPusherSystem(DynamicalSystem):
             self.mbp.get_state_output_port(self.pusher),
             pid.get_input_port_estimated_state(),
         )
-        # builder.ExportInput(pid.get_input_port_desired_state(), "u")
 
         # Add trajectory Source.
         dummy_trj = PiecewisePolynomial.FirstOrderHold([0, 0.1], np.zeros((4, 2)))
