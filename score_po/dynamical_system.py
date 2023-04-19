@@ -11,7 +11,7 @@ from tqdm import tqdm
 import wandb
 
 from score_po.policy import Policy
-from score_po.nn import AdamOptimizerParams, WandbParams, TrainParams
+from score_po.nn import AdamOptimizerParams, WandbParams, TrainParams, Normalizer
 import score_po.nn
 
 """
@@ -59,31 +59,45 @@ class NNDynamicalSystem(DynamicalSystem):
     - output shape (n)
     """
 
-    def __init__(self, dim_x, dim_u, network):
+    def __init__(
+        self,
+        dim_x,
+        dim_u,
+        network,
+        x_normalizer: Optional[Normalizer] = None,
+        u_normalizer: Optional[Normalizer] = None,
+    ):
         super().__init__(dim_x, dim_u)
         self.net = network
         self.is_differentiable = True
         self.check_input_consistency()
+        self.x_normalizer: Normalizer = (
+            Normalizer(k=None, b=None) if x_normalizer is None else x_normalizer
+        )
+        self.u_normalizer: Normalizer = (
+            Normalizer(k=None, b=None) if u_normalizer is None else u_normalizer
+        )
 
     def check_input_consistency(self):
-        if hasattr(self.net, "dim_in") and (self.net.dim_in is not self.dim_x + self.dim_u):
+        if hasattr(self.net, "dim_in") and (
+            self.net.dim_in is not self.dim_x + self.dim_u
+        ):
             raise ValueError("Inconsistent input size of neural network.")
         if hasattr(self.net, "dim_out") and (self.net.dim_out is not self.dim_x):
             raise ValueError("Inconsistent output size of neural network.")
 
     def dynamics(self, x, u, eval=True):
-        if eval:
-            self.net.eval()
-
-        input = torch.hstack((x, u))[None, :]
-        return self.net(input)[0, :]
+        return self.dynamics_batch(x.unsqueeze(0), u.unsqueeze(0), eval).squeeze(0)
 
     def dynamics_batch(self, x_batch, u_batch, eval=True):
         if eval:
             self.net.eval()
 
-        input = torch.hstack((x_batch, u_batch))
-        return self.net(input)
+        x_normalized = self.x_normalizer(x_batch)
+        u_normalized = self.u_normalizer(u_batch)
+        normalized_input = torch.hstack((x_normalized, u_normalized))
+        normalized_output = self.net(normalized_input)
+        return self.x_normalizer.denormalize(normalized_output)
 
     def forward(self, x, u, eval):
         return self.dynamics_batch(x, u, eval)
@@ -107,7 +121,7 @@ class NNDynamicalSystem(DynamicalSystem):
         loss = 0.5 * ((labels - pred) ** 2).sum(dim=-1).mean(dim=0)
         return loss
 
-    def train_network(self, dataset: TensorDataset, params: TrainParams, sigma=0.0):
+    def train_network(self, dataset: TensorDataset, params: TrainParams, sigma: float=0.0):
         """
         Train a network given a dataset and optimization parameters.
         """
@@ -115,7 +129,7 @@ class NNDynamicalSystem(DynamicalSystem):
         def loss(tensors, placeholder):
             x, u, x_next = tensors
             return self.evaluate_dynamic_loss(
-                torch.cat((x, u), dim=-1), x_next, sigma=0.0
+                torch.cat((x, u), dim=-1), x_next, sigma=sigma
             )
 
-        return score_po.nn.train_network(self.net, params, dataset, loss, split=True)
+        return score_po.nn.train_network(self, params, dataset, loss, split=True)

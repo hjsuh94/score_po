@@ -6,8 +6,8 @@ train:
     dir: null
     entity: null
   adam:
-    lr: 1e-5
-    epochs: 3
+    lr: 1e-1
+    epochs: 50
     batch_size: 256
   device: "cuda"
   save_best_model: "best.pth"

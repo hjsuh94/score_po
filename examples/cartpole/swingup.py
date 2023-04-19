@@ -11,7 +11,6 @@ from score_po.nn import AdamOptimizerParams, WandbParams
 from score_po.policy_optimizer import (
     PolicyOptimizer,
     PolicyOptimizerParams,
-    FirstOrderPolicyOptimizer,
 )
 from score_po.costs import QuadraticCost
 from score_po.policy import TimeVaryingOpenLoopPolicy
@@ -60,13 +59,13 @@ def single_shooting(
     """
     device = x0.device
     params = PolicyOptimizerParams()
+    params.load_from_config(cfg)
     params.cost = QuadraticCost(
         Q=torch.zeros((4, 4)),
         R=torch.tensor([[0.000]]),
         Qd=torch.diag(torch.tensor([1, 1, 0.1, 0.1])),
         xd=torch.tensor([0, np.pi, 0, 0]),
     )
-    params.cost.to(device)
     params.dynamical_system = dynamical_system
     params.policy = TimeVaryingOpenLoopPolicy(dim_x=4, dim_u=1, T=T)
     if cfg.load_swingup_policy is None:
@@ -74,21 +73,10 @@ def single_shooting(
     else:
         params.policy.set_parameters(torch.load(cfg.load_swingup_policy))
         params.policy_params_0 = params.policy.get_parameters()
-    params.T = T
 
-    params.x0_upper = x0
-    params.x0_lower = x0
-    params.batch_size = 1
-
-    params.std = 0
-    params.lr = 6e-1
-    params.max_iters = 20000
-    params.wandb_params = WandbParams()
-    params.wandb_params.load_from_config(cfg, "policy")
-    params.save_best_model = cfg.save_swingup_policy
     params.to_device(device)
 
-    policy_optimizer = FirstOrderPolicyOptimizer(params)
+    policy_optimizer = PolicyOptimizer(params)
     policy_optimizer.iterate()
     plot_result(policy_optimizer)
 
