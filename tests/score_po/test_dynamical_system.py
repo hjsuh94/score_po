@@ -7,7 +7,7 @@ from hydra import initialize, compose
 from torch.utils.data import TensorDataset
 
 import score_po.dynamical_system as mut
-from score_po.nn import MLP, TrainParams
+from score_po.nn import MLP, TrainParams, Normalizer
 
 
 class TestNNDynamicalSystem:
@@ -24,18 +24,36 @@ class TestNNDynamicalSystem:
 
         # Doesn't throw since 3 + 2 = 5.
         network = MLP(5, 3, [128, 128])
-        sf = mut.NNDynamicalSystem(3, 2, network)
+        sf = mut.NNDynamicalSystem(
+            3,
+            2,
+            network,
+            x_normalizer=Normalizer(k=torch.tensor(2.0), b=torch.tensor(1.0)),
+        )
 
     @pytest.mark.parametrize("device", ("cpu", "cuda"))
     def test_dynamics_eval(self, device: Literal["cpu", "cuda"]):
         network = MLP(3, 2, [128, 128])
-        dynamics = mut.NNDynamicalSystem(2, 1, network).to(device)
+        x_normalizer = Normalizer(
+            k=torch.tensor([1.0, 2.0]), b=torch.tensor([0.1, 0.2])
+        )
+        u_normalizer = Normalizer(k=torch.tensor(3.), b=torch.tensor(0.3))
+        dynamics = mut.NNDynamicalSystem(2, 1, network, x_normalizer, u_normalizer).to(device)
 
         x_tensor = torch.rand(100, 2).to(device)
         u_tensor = torch.rand(100, 1).to(device)
 
         np.testing.assert_equal(
             dynamics.dynamics_batch(x_tensor, u_tensor).shape, torch.Size([100, 2])
+        )
+
+        x_normalized = x_normalizer(x_tensor)
+        u_normalized = u_normalizer(u_tensor)
+        normalized_input = torch.cat((x_normalized, u_normalized), dim=-1)
+        output_expected = x_normalizer.denormalize(network(normalized_input))
+        np.testing.assert_allclose(
+            output_expected.cpu().detach().numpy(),
+            dynamics.dynamics_batch(x_tensor, u_tensor).cpu().detach().numpy(),
         )
 
     @pytest.mark.parametrize("device", ("cpu", "cuda"))
