@@ -1,0 +1,11 @@
+<?xml version="1.0"?>
+<package>
+  <name>score_po</name>
+  <version>1.0.0</version>
+  <description>
+    This package contains models for Drake simulation in score_po repo.
+  </description>
+  <author email="hjsuh@mit.edu">Terry Suh</author>
+  <maintainer email="hjsuh@mit.edu">Terry Suh</maintainer>
+  <license>BSD</license>
+</package>

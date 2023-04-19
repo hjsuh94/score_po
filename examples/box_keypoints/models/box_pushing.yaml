@@ -1,0 +1,16 @@
+directives:
+- add_model:
+    name: small_table
+    file: package://score_po/small_table.urdf
+
+- add_weld:
+    parent: world
+    child: small_table::TableTop
+
+- add_model:
+    name: box
+    file: package://drake/manipulation/models/ycb/sdf/004_sugar_box.sdf    
+
+- add_model:
+    name: pusher
+    file: package://score_po/pusher.sdf

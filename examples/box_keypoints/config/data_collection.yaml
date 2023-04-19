@@ -1,0 +1,18 @@
+defaults:
+  - user: terry
+
+hydra:
+  run:
+    dir: ${user.run_dir}
+
+box_width: 0.0867 # from ycb sugar box geometry
+box_height: 0.1703 # from ycb sugar box geometry
+dataset_size: 10
+dataset_dir: ${user.dataset_dir}
+
+# Choose between "world" or "body". When set to "body", we collect
+# data in the body frame and set the box pose to [0, 0, 0].
+frame: "world" # choose between "world" or "body".
+
+# noise to inject on keypoints.
+noise_std: 0.0
