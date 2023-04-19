@@ -39,16 +39,16 @@ class PlanarPusherSystem(DynamicalSystem):
     """
     Planar pushing dynamical system, implemented in Drake.
     x: position of box and pusher, [x_box, y_box, theta_box, x_pusher, y_pusher]
-    u: velocity command on the pusher.
+    u: delta position command on the pusher.
     """
 
-    def __init__(self, project_dir="."):
+    def __init__(self):
         super().__init__(dim_x=5, dim_u=2)
         self.is_differentiable = False
         self.h = 3.0  # simulation duration.
         self.h_mbp = 1e-3
         self.meshcat = StartMeshcat()
-
+        
         # These dimensions come from the ycb dataset on 004_sugar_box.sdf
         # The elements corresponds to box_width along [x,y,z] dimension.
         self.box_dim = np.array([0.0867, 0.1703, 0.0391])
@@ -57,12 +57,9 @@ class PlanarPusherSystem(DynamicalSystem):
         builder = DiagramBuilder()
         self.mbp, self.sg = AddMultibodyPlantSceneGraph(builder, time_step=self.h_mbp)
         self.parser = Parser(self.mbp, self.sg)
-        self.parser.package_map().PopulateFromFolder(
-            os.path.join(project_dir, "examples/box_keypoints")
-        )
+        self.parser.package_map().PopulateFromFolder(os.path.dirname(__file__))
         directives = LoadModelDirectives(
-            os.path.join(project_dir, "examples/box_keypoints/models/box_pushing.yaml")
-        )
+            os.path.join(os.path.dirname(__file__), "models/box_pushing.yaml"))
         ProcessModelDirectives(directives, self.mbp, self.parser)
         self.mbp.Finalize()
 
@@ -71,7 +68,8 @@ class PlanarPusherSystem(DynamicalSystem):
         self.pusher = self.mbp.GetModelInstanceByName("pusher")
 
         # Add visualizer.
-        self.visualizer = MeshcatVisualizer.AddToBuilder(builder, self.sg, self.meshcat)
+        self.visualizer = MeshcatVisualizer.AddToBuilder(
+            builder, self.sg, self.meshcat)
 
         # Add PID Controller.
         pid = builder.AddSystem(
@@ -85,7 +83,6 @@ class PlanarPusherSystem(DynamicalSystem):
             self.mbp.get_state_output_port(self.pusher),
             pid.get_input_port_estimated_state(),
         )
-        # builder.ExportInput(pid.get_input_port_desired_state(), "u")
 
         # Add trajectory Source.
         dummy_trj = PiecewisePolynomial.FirstOrderHold([0, 0.1], np.zeros((4, 2)))
@@ -106,7 +103,8 @@ class PlanarPusherSystem(DynamicalSystem):
     def planar_to_full_coordinates(self, x):
         """Given x in planar coordinates, convert to full coordinates."""
         theta = x[2]
-        q_wxyz = Quaternion(RotationMatrix(RollPitchYaw([0, 0, theta])).matrix()).wxyz()
+        q_wxyz = Quaternion(
+            RotationMatrix(RollPitchYaw([0, 0, theta])).matrix()).wxyz()
         p_xyz = np.array([x[0], x[1], self.box_dim[2]])
         return np.concatenate((q_wxyz, p_xyz))
 

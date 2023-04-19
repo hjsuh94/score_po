@@ -12,7 +12,7 @@ from score_po.score_matching import ScoreEstimator
 from score_po.costs import Cost
 from score_po.dynamical_system import DynamicalSystem
 from score_po.policy import Policy
-from score_po.nn import WandbParams
+from score_po.nn import WandbParams, save_module
 
 
 @dataclass
@@ -54,8 +54,10 @@ class PolicyOptimizerParams:
         self.wandb_params.load_from_config(cfg, field="policy")
 
     def to_device(self, device):
-        self.cost.params_to_device(device)
+        self.cost.to(device)
         self.policy = self.policy.to(self.device)
+        if isinstance(self.dynamical_system, torch.nn.Module):
+            self.dynamical_system.to(device)
         self.x0_upper = self.x0_upper.to(device)
         self.x0_lower = self.x0_lower.to(device)
         self.device = device
@@ -222,7 +224,7 @@ class PolicyOptimizer:
                 model_dir = os.path.dirname(model_path)
                 if not os.path.exists(model_dir):
                     os.makedirs(model_dir, exist_ok=True)
-                self.policy.save_parameters(model_path)
+                save_module(self.policy, model_path)
                 best_cost = cost.item()
 
             print(

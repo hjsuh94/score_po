@@ -1,3 +1,5 @@
+import os
+
 import torch
 import numpy as np
 
@@ -84,13 +86,14 @@ class DataDistance:
         return x_batch.grad
 
 
-class DataDistanceEstimator:
+class DataDistanceEstimator(torch.nn.Module):
     def __init__(self, dim_x, network, metric, domain_lb, domain_ub):
+        super().__init__()
         self.dim_x = dim_x
         self.net = network
-        self.metric = metric
-        self.domain_lb = domain_lb
-        self.domain_ub = domain_ub
+        self.register_buffer("metric", metric)
+        self.register_buffer("domain_lb", domain_lb)
+        self.register_buffer("domain_ub", domain_ub)
         self.check_input_consistency()
 
     def check_input_consistency(self):
@@ -111,6 +114,9 @@ class DataDistanceEstimator:
             self.net.train()
 
         return self.net(x_batch)
+
+    def forward(self, x_batch, eval=True):
+        return self.get_energy_to_data(x_batch, eval)
 
     def get_energy_gradients(self, x_batch):
         """
@@ -148,9 +154,3 @@ class DataDistanceEstimator:
             self.net, params, self.sample_from_domain, loss_fn, split=False
         )
         return loss_lst
-
-    def save_network_parameters(self, filename):
-        torch.save(self.net.state_dict(), filename)
-
-    def load_network_parameters(self, filename):
-        self.net.load_state_dict(torch.load(filename))

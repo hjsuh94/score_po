@@ -17,9 +17,11 @@ from score_po.nn import MLP, TrainParams
 def main(cfg: DictConfig):
     network = MLP(10, 10, cfg.nn_layers)
     sf = ScoreEstimator(10, 0, network)
-    sf.load_network_parameters(
-        os.path.join(
-            get_original_cwd(), "examples/box_keypoints/weights/checkpoint.pth"
+    sf.load_state_dict(
+        torch.load(
+            os.path.join(
+                get_original_cwd(), "examples/box_keypoints/weights/checkpoint.pth"
+            )
         )
     )
 

@@ -15,7 +15,7 @@ from box_pushing_system import PlanarPusherSystem
 
 @hydra.main(config_path="./config", config_name="data_collection")
 def main(cfg: DictConfig):
-    system = PlanarPusherSystem(get_original_cwd())
+    system = PlanarPusherSystem()
 
     x_data = np.zeros((cfg.dataset_size, 5))
     u_data = np.zeros((cfg.dataset_size, 2))
@@ -29,7 +29,7 @@ def main(cfg: DictConfig):
         if cfg.frame == "world":
             x = 0.8 * (np.random.rand(5) - 0.5)
         elif cfg.frame == "body":
-            x = 0.4 * (np.random.rand(5) - 0.5)
+            x = 0.8 * (np.random.rand(5) - 0.5)
             x[0:3] = 0.0
         else:
             raise ValueError

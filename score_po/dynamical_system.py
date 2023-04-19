@@ -19,8 +19,9 @@ Classes for dynamical systems.
 """
 
 
-class DynamicalSystem(abc.ABC):
+class DynamicalSystem(torch.nn.Module):
     def __init__(self, dim_x, dim_u):
+        super().__init__()
         self.dim_x = dim_x
         self.dim_u = dim_u
         self.is_differentiable = False
@@ -47,6 +48,9 @@ class DynamicalSystem(abc.ABC):
             xnext of shape (batch_size, n)
         """
 
+    def forward(self, x, u):
+        return self.dynamics_batch(x, u)
+
 
 class NNDynamicalSystem(DynamicalSystem):
     """
@@ -70,7 +74,6 @@ class NNDynamicalSystem(DynamicalSystem):
     def dynamics(self, x, u, eval=True):
         if eval:
             self.net.eval()
-        self.net = self.net.to(x.device)
 
         input = torch.hstack((x, u))[None, :]
         return self.net(input)[0, :]
@@ -78,10 +81,12 @@ class NNDynamicalSystem(DynamicalSystem):
     def dynamics_batch(self, x_batch, u_batch, eval=True):
         if eval:
             self.net.eval()
-        self.net = self.net.to(x_batch.device)
 
         input = torch.hstack((x_batch, u_batch))
         return self.net(input)
+
+    def forward(self, x, u, eval):
+        return self.dynamics_batch(x, u, eval)
 
     def evaluate_dynamic_loss(self, data, labels, sigma=0.0):
         """
@@ -114,12 +119,3 @@ class NNDynamicalSystem(DynamicalSystem):
             )
 
         return score_po.nn.train_network(self.net, params, dataset, loss, split=True)
-
-    def save_network_parameters(self, filename):
-        file_dir = os.path.dirname(filename)
-        if not os.path.exists(file_dir):
-            os.makedirs(file_dir, exist_ok=True)
-        torch.save(self.net.state_dict(), filename)
-
-    def load_network_parameters(self, filename):
-        self.net.load_state_dict(torch.load(filename))
