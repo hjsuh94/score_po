@@ -15,7 +15,7 @@ from box_pushing_system import PlanarPusherSystem
 
 @hydra.main(config_path="./config", config_name="data_collection")
 def main(cfg: DictConfig):
-    system = PlanarPusherSystem(get_original_cwd())
+    system = PlanarPusherSystem()
 
     x_data = np.zeros((cfg.dataset_size, 5))
     u_data = np.zeros((cfg.dataset_size, 2))

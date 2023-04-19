@@ -42,7 +42,7 @@ class PlanarPusherSystem(DynamicalSystem):
     u: velocity command on the pusher.
     """
 
-    def __init__(self, project_dir="."):
+    def __init__(self):
         super().__init__(dim_x=5, dim_u=2)
         self.is_differentiable = False
         self.h = 3.0  # simulation duration.
@@ -57,11 +57,9 @@ class PlanarPusherSystem(DynamicalSystem):
         builder = DiagramBuilder()
         self.mbp, self.sg = AddMultibodyPlantSceneGraph(builder, time_step=self.h_mbp)
         self.parser = Parser(self.mbp, self.sg)
-        self.parser.package_map().PopulateFromFolder(
-            os.path.join(project_dir, "examples/box_keypoints"))
+        self.parser.package_map().PopulateFromFolder(os.path.dirname(__file__))
         directives = LoadModelDirectives(
-            os.path.join(
-                project_dir, "examples/box_keypoints/models/box_pushing.yaml"))
+            os.path.join(os.path.dirname(__file__), "models/box_pushing.yaml"))
         ProcessModelDirectives(directives, self.mbp, self.parser)
         self.mbp.Finalize()
 
@@ -70,7 +68,8 @@ class PlanarPusherSystem(DynamicalSystem):
         self.pusher = self.mbp.GetModelInstanceByName("pusher")
 
         # Add visualizer.
-        self.visualizer = MeshcatVisualizer.AddToBuilder(builder, self.sg, self.meshcat)
+        self.visualizer = MeshcatVisualizer.AddToBuilder(
+            builder, self.sg, self.meshcat)
 
         # Add PID Controller.
         pid = builder.AddSystem(
