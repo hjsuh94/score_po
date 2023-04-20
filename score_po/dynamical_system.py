@@ -102,23 +102,29 @@ class NNDynamicalSystem(DynamicalSystem):
     def forward(self, x, u, eval):
         return self.dynamics_batch(x, u, eval)
 
-    def evaluate_dynamic_loss(self, data, labels, sigma=0.0):
+    def evaluate_dynamic_loss(self, xu, x_next, sigma=0.0, normalize_loss: bool=False):
         """
         Evaluate L2 loss.
         data_samples:
-            data of shape (B, dim_x + dim_u + dim_x)
+            xu: shape (B, dim_x + dim_u)
+            x_next: shape (B, dim_x)
             sigma: vector of dim_x + dim_u used for data augmentation.
+            normalize_loss: if set to true, then we normalize x_next and dynamics(xu)
+            when computing the loss.
         """
-        B = data.shape[0]
+        B = xu.shape[0]
         if sigma > 0:
-            noise = torch.normal(0, sigma, size=data.shape, device=data.device)
-            databar = data + noise
+            noise = torch.normal(0, sigma, size=xu.shape, device=xu.device)
+            databar = xu + noise
         else:
-            databar = data
+            databar = xu
         pred = self.dynamics_batch(
             databar[:, : self.dim_x], databar[:, self.dim_x :], eval=False
         )  # B x dim_x
-        loss = 0.5 * ((labels - pred) ** 2).sum(dim=-1).mean(dim=0)
+        if normalize_loss:
+            x_next = self.x_normalizer(x_next)
+            pred = self.x_normalizer(pred)
+        loss = 0.5 * ((x_next - pred) ** 2).sum(dim=-1).mean(dim=0)
         return loss
 
     def train_network(self, dataset: TensorDataset, params: TrainParams, sigma: float=0.0):
