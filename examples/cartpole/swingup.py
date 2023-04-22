@@ -1,4 +1,4 @@
-from omegaconf import DictConfig 
+from omegaconf import DictConfig, OmegaConf
 import os
 
 import hydra
@@ -7,17 +7,21 @@ import numpy as np
 import torch
 
 from examples.cartpole.cartpole_plant import CartpoleNNDynamicalSystem, CartpolePlant
-from score_po.nn import AdamOptimizerParams, WandbParams
+from score_po.nn import AdamOptimizerParams, WandbParams, Normalizer
 from score_po.policy_optimizer import (
     PolicyOptimizer,
     PolicyOptimizerParams,
+    DRiskScorePolicyOptimizer,
+    DRiskScorePolicyOptimizerParams,
 )
+from score_po.score_matching import ScoreEstimator
 from score_po.costs import QuadraticCost
 from score_po.policy import TimeVaryingOpenLoopPolicy
+from examples.cartpole.score_training import get_score_network
 
 
 def plot_result(policy_optimizer: PolicyOptimizer):
-    device = policy_optimizer.policy_history.device
+    device = policy_optimizer.params.device
     x_trj, u_trj = policy_optimizer.rollout_policy(
         x0=torch.zeros((4,), device=device),
         noise_trj=torch.zeros((policy_optimizer.params.T, 1), device=device),
@@ -47,8 +51,7 @@ def plot_result(policy_optimizer: PolicyOptimizer):
 def single_shooting(
     dynamical_system: CartpoleNNDynamicalSystem,
     x0: torch.Tensor,
-    T: int,
-    u_max: float,
+    score_estimator: ScoreEstimator,
     cfg: DictConfig,
 ) -> torch.Tensor:
     """
@@ -58,7 +61,7 @@ def single_shooting(
       u_traj: Of shape (T-1, 1). u_traj[i]
     """
     device = x0.device
-    params = PolicyOptimizerParams()
+    params = DRiskScorePolicyOptimizerParams()
     params.load_from_config(cfg)
     params.cost = QuadraticCost(
         Q=torch.zeros((4, 4)),
@@ -66,37 +69,40 @@ def single_shooting(
         Qd=torch.diag(torch.tensor([1, 1, 0.1, 0.1])),
         xd=torch.tensor([0, np.pi, 0, 0]),
     )
+    params.sf = score_estimator
     params.dynamical_system = dynamical_system
-    params.policy = TimeVaryingOpenLoopPolicy(dim_x=4, dim_u=1, T=T)
-    if cfg.load_swingup_policy is None:
-        params.policy_params_0 = 0 * torch.ones((T,), device=device)
-    else:
-        params.policy.set_parameters(torch.load(cfg.load_swingup_policy))
-        params.policy_params_0 = params.policy.get_parameters()
+    params.policy = TimeVaryingOpenLoopPolicy(dim_x=4, dim_u=1, T=params.T)
+    if cfg.policy.load_ckpt is not None:
+        params.policy.load_state_dict(torch.load(cfg.policy.load_ckpt))
 
     params.to_device(device)
 
-    policy_optimizer = PolicyOptimizer(params)
+    policy_optimizer = DRiskScorePolicyOptimizer(params)
     policy_optimizer.iterate()
     plot_result(policy_optimizer)
 
 
 @hydra.main(config_path="./config", config_name="swingup")
 def main(cfg: DictConfig):
+    OmegaConf.save(cfg, os.path.join(os.getcwd(), "config.yaml"))
     device = cfg.device
     nn_plant = CartpoleNNDynamicalSystem(
         hidden_layers=cfg.nn_plant.hidden_layers,
-        x_lo=torch.tensor([-1, -np.pi, -3, -12]),
-        x_up=torch.tensor([1, 1.5 * np.pi, 3, 12]),
-        u_lo=torch.tensor([-cfg.nn_plant.u_max]),
-        u_up=torch.tensor([cfg.nn_plant.u_max]),
         device=device,
     )
 
     nn_plant.load_state_dict(torch.load(cfg.dynamics_load_ckpt))
     plant = CartpolePlant(dt=0.1)
+
+    score_network = get_score_network()
+    sf = ScoreEstimator(dim_x=4, dim_u=1, network=score_network).to(device)
+    sf.load_state_dict(torch.load(cfg.score_estimator_load_ckpt))
+
     single_shooting(
-        plant, x0=torch.tensor([0, 0, 0, 0.0], device=device), T=20, u_max=100, cfg=cfg
+        plant,
+        x0=torch.tensor([0, 0, 0, 0.0], device=device),
+        score_estimator=sf,
+        cfg=cfg,
     )
     pass
 

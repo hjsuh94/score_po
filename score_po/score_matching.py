@@ -62,7 +62,9 @@ class ScoreEstimator(torch.nn.Module):
         self.net = network
         self.sigma = 0.1
         self.z_normalizer: Normalizer = (
-            Normalizer(k=None, b=None) if z_normalizer is None else z_normalizer
+            Normalizer(k=torch.ones(dim_x + dim_u), b=torch.zeros(dim_x + dim_u))
+            if z_normalizer is None
+            else z_normalizer
         )
         self.check_input_consistency()
 
@@ -200,7 +202,7 @@ class ScoreEstimator(torch.nn.Module):
         """
         # NOTE: We use x_batch[0] here since dataloader gives a tuple (x_batch,).
         loss_fn = lambda x_batch, net: self.evaluate_loss(x_batch[0], sigma, mode)
-        loss_lst = train_network(self.net, params, dataset, loss_fn, split)
+        loss_lst = train_network(self, params, dataset, loss_fn, split)
         return loss_lst
 
 

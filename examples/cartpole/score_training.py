@@ -10,7 +10,7 @@ from score_po.score_matching import ScoreEstimator
 from score_po.nn import MLP, TrainParams, save_module, Normalizer
 
 
-def get_network():
+def get_score_network():
     return MLP(5, 5, [128, 128, 128, 128])
 
 
@@ -23,7 +23,7 @@ def main(cfg: DictConfig):
     device = cfg.device
     dataset = torch.load(cfg.dataset.load_path)
 
-    network: MLP = get_network()
+    network: MLP = get_score_network()
     network.to(device)
 
     params = TrainParams()
@@ -35,7 +35,7 @@ def main(cfg: DictConfig):
     z_data = torch.cat((x_data, u_data), dim=-1)
     z_dataset = torch.utils.data.TensorDataset(z_data)
 
-    z_normalizer = Normalizer(k=torch.Tensor([2, np.pi, 3, 12, 80]), b=None)
+    z_normalizer = Normalizer(k=torch.Tensor([2, np.pi, 3, 12, 80]), b=torch.zeros(5))
     score_estimator = ScoreEstimator(
         dim_x=4, dim_u=1, network=network, z_normalizer=z_normalizer
     )

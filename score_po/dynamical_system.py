@@ -72,10 +72,10 @@ class NNDynamicalSystem(DynamicalSystem):
         self.is_differentiable = True
         self.check_input_consistency()
         self.x_normalizer: Normalizer = (
-            Normalizer(k=None, b=None) if x_normalizer is None else x_normalizer
+            Normalizer(k=torch.ones(dim_x), b=torch.zeros(dim_x)) if x_normalizer is None else x_normalizer
         )
         self.u_normalizer: Normalizer = (
-            Normalizer(k=None, b=None) if u_normalizer is None else u_normalizer
+            Normalizer(k=torch.ones(dim_u), b=torch.zeros(dim_u)) if u_normalizer is None else u_normalizer
         )
 
     def check_input_consistency(self):
