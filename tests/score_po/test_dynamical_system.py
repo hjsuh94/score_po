@@ -76,3 +76,36 @@ class TestNNDynamicalSystem:
             params.load_from_config(cfg)
             params.device = device
         loss_lst = dynamics.train_network(dataset, params)
+
+    @pytest.mark.parametrize("device", ("cpu", "cuda"))
+    def test_evaluate_dynamic_loss(self, device):
+        network = MLP(4, 2, [32, 16])
+        x_normalizer = Normalizer(k=torch.tensor([2, 3.0]), b=torch.tensor([0, 1.0]))
+        u_normalizer = Normalizer(k=torch.tensor([3, 4.0]), b=torch.tensor([1, 2.0]))
+        dut = mut.NNDynamicalSystem(2, 2, network, x_normalizer, u_normalizer).to(
+            device
+        )
+
+        batch = 1000
+        xu = torch.randn((batch, 4)).to(device) * 3 + 1
+        x_next = torch.randn(batch, 2).to(device) * 2
+        loss_unnormalized = dut.evaluate_dynamic_loss(
+            xu, x_next, sigma=0, normalize_loss=False
+        )
+        loss_unnormalized_expected = 0.5 * (
+            (dut(xu[:, :2], xu[:, 2:], eval=True) - x_next) ** 2
+        ).sum(dim=-1).mean(dim=0)
+        np.testing.assert_allclose(
+            loss_unnormalized.cpu().detach(), loss_unnormalized_expected.cpu().detach()
+        )
+
+        loss_normalized = dut.evaluate_dynamic_loss(
+            xu, x_next, sigma=0, normalize_loss=True
+        )
+        loss_normalized_expected = 0.5 * (
+            (x_normalizer(dut(xu[:, :2], xu[:, 2:], eval=True)) - x_normalizer(x_next))
+            ** 2
+        ).sum(dim=-1).mean(dim=0)
+        np.testing.assert_allclose(
+            loss_unnormalized.cpu().detach(), loss_unnormalized_expected.cpu().detach()
+        )
