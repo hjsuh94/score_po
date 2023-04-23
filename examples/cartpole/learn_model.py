@@ -136,7 +136,7 @@ def main(cfg: DictConfig):
     params = TrainParams()
     params.load_from_config(cfg)
     if cfg.train.load_ckpt is not None:
-        nn_plant.net.mlp.load_state_dict(torch.load(cfg.train.load_ckpt))
+        nn_plant.load_state_dict(torch.load(cfg.train.load_ckpt))
     nn_plant.train_network(dataset, params, sigma=0.0)
 
 

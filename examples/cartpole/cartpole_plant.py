@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Optional
 
 import numpy as np
 import torch
@@ -92,11 +92,9 @@ class CartpoleNNDynamicalSystem(NNDynamicalSystem):
     def __init__(
         self,
         hidden_layers: List[int],
-        x_lo: torch.Tensor,
-        x_up: torch.Tensor,
-        u_lo: torch.Tensor,
-        u_up: torch.Tensor,
         device: str,
+        x_normalizer: Optional[score_po.nn.Normalizer] = None,
+        u_normalizer: Optional[score_po.nn.Normalizer] = None,
     ):
         """
         Args:
@@ -111,12 +109,14 @@ class CartpoleNNDynamicalSystem(NNDynamicalSystem):
             activation=torch.nn.LeakyReLU(),
         ).to(device)
         self.device = device
-        self.x_lo = x_lo.to(self.device)
-        self.x_up = x_up.to(self.device)
-        self.u_lo = u_lo.to(self.device)
-        self.u_up = u_up.to(self.device)
 
-        super().__init__(network=residual_net, dim_x=4, dim_u=1)
+        super().__init__(
+            network=residual_net,
+            dim_x=4,
+            dim_u=1,
+            x_normalizer=x_normalizer,
+            u_normalizer=u_normalizer,
+        )
 
     def dynamics(self, x: torch.Tensor, u: torch.Tensor, eval: bool = True):
         return self.dynamics_batch(
@@ -132,16 +132,11 @@ class CartpoleNNDynamicalSystem(NNDynamicalSystem):
             self.net.train()
 
         # We first normalize x and u.
-        # Our state and control can have very different magnitude. We can learn a more
-        # accurate model with normalized input.
-        x_normalized = (2 * x_batch.to(self.device) - (self.x_lo + self.x_up)) / (
-            self.x_up - self.x_lo
-        )
-        u_normalized = (2 * u_batch.to(self.device) - (self.u_lo + self.u_up)) / (
-            self.u_up - self.u_lo
-        )
+        x_normalized = self.x_normalizer(x_batch)
+        u_normalized = self.u_normalizer(u_batch)
+
         xu_batch = torch.concat((x_normalized, u_normalized), dim=1)
 
         # The network only predicts the residual dynamics
         delta_x_batch = self.net(xu_batch)
-        return x_batch + delta_x_batch
+        return x_batch + self.x_normalizer.denormalize(delta_x_batch)
