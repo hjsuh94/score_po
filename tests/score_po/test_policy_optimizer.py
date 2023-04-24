@@ -31,6 +31,7 @@ class TestPolicyConfig:
         np.testing.assert_allclose(params.x0_lower.cpu(), torch.Tensor([0.28, 0.18]))
         np.testing.assert_equal(params.batch_size, 16)
         np.testing.assert_allclose(params.std, 1e-2)
+        np.testing.assert_equal(params.first_order, True)
 
         np.testing.assert_equal(params.wandb_params.enabled, True)
         np.testing.assert_equal(params.device, "cuda")
@@ -80,9 +81,12 @@ class TestPolicyOptimizerKnownDynamics:
         return params
 
     @pytest.mark.parametrize("device", ("cpu", "cuda"))
-    def test_open_loop_policy(self, device):
+    @pytest.mark.parametrize("first_order", (True, False))
+    def test_open_loop_policy(self, device, first_order):
         with initialize(config_path="./config"):
             self.cfg = compose(config_name="policy_params")
+            self.cfg.policy.device = device
+            self.cfg.policy.first_order = first_order
 
         policy = TimeVaryingOpenLoopPolicy(2, 2, self.cfg.policy.T)
         params = self.initialize_problem(device, policy, self.cfg)
@@ -91,9 +95,12 @@ class TestPolicyOptimizerKnownDynamics:
         optimizer.iterate()
 
     @pytest.mark.parametrize("device", ("cpu", "cuda"))
-    def test_state_feedback_policy(self, device):
+    @pytest.mark.parametrize("first_order", (True, False))
+    def test_state_feedback_policy(self, device, first_order):
         with initialize(config_path="./config"):
             self.cfg = compose(config_name="policy_params")
+            self.cfg.policy.device = device
+            self.cfg.policy.first_order = first_order
 
         policy = TimeVaryingStateFeedbackPolicy(2, 2, self.cfg.policy.T)
         params = self.initialize_problem(device, policy, self.cfg)
@@ -102,9 +109,12 @@ class TestPolicyOptimizerKnownDynamics:
         optimizer.iterate()
 
     @pytest.mark.parametrize("device", ("cpu", "cuda"))
-    def test_nn_policy(self, device):
+    @pytest.mark.parametrize("first_order", (True, False))
+    def test_nn_policy(self, device, first_order):
         with initialize(config_path="./config"):
             self.cfg = compose(config_name="policy_params")
+            self.cfg.policy.device = device
+            self.cfg.policy.first_order = first_order
 
         network = MLP(2, 2, [128, 128])
         policy = NNPolicy(2, 2, network)
@@ -114,9 +124,12 @@ class TestPolicyOptimizerKnownDynamics:
         optimizer.iterate()
 
     @pytest.mark.parametrize("device", ("cpu", "cuda"))
-    def test_torch_optimizer(self, device):
+    @pytest.mark.parametrize("first_order", (True, False))
+    def test_torch_optimizer(self, device, first_order):
         with initialize(config_path="./config"):
             self.cfg = compose(config_name="policy_params")
+            self.cfg.policy.device = device
+            self.cfg.policy.first_order = first_order
 
         network = MLP(2, 2, [128, 128])
         policy = NNPolicy(2, 2, network)
@@ -157,9 +170,12 @@ class TestPolicyOptimizerNNDynamics:
         return params
 
     @pytest.mark.parametrize("device", ("cpu", "cuda"))
-    def test_open_loop_policy(self, device):
+    @pytest.mark.parametrize("first_order", (True, False))
+    def test_open_loop_policy(self, device, first_order):
         with initialize(config_path="./config"):
             self.cfg = compose(config_name="policy_params")
+            self.cfg.policy.device = device
+            self.cfg.policy.first_order = first_order
 
         policy = TimeVaryingOpenLoopPolicy(2, 2, self.cfg.policy.T)
         params = self.initialize_problem(device, policy, self.cfg)
@@ -168,9 +184,12 @@ class TestPolicyOptimizerNNDynamics:
         optimizer.iterate()
 
     @pytest.mark.parametrize("device", ("cpu", "cuda"))
-    def test_state_feedback_policy(self, device):
+    @pytest.mark.parametrize("first_order", (True, False))
+    def test_state_feedback_policy(self, device, first_order):
         with initialize(config_path="./config"):
             self.cfg = compose(config_name="policy_params")
+            self.cfg.policy.device = device
+            self.cfg.policy.first_order = first_order
 
         policy = TimeVaryingStateFeedbackPolicy(2, 2, self.cfg.policy.T)
         params = self.initialize_problem(device, policy, self.cfg)
@@ -179,9 +198,12 @@ class TestPolicyOptimizerNNDynamics:
         optimizer.iterate()
 
     @pytest.mark.parametrize("device", ("cpu", "cuda"))
-    def test_nn_policy(self, device):
+    @pytest.mark.parametrize("first_order", (True, False))
+    def test_nn_policy(self, device, first_order):
         with initialize(config_path="./config"):
             self.cfg = compose(config_name="policy_params")
+            self.cfg.policy.device = device
+            self.cfg.policy.first_order = first_order
 
         network = MLP(2, 2, [128, 128])
         policy = NNPolicy(2, 2, network)
@@ -214,10 +236,12 @@ class TestDRiskScoreOptimizer:
         return params
 
     @pytest.mark.parametrize("device", ("cpu", "cuda"))
-    def test_open_loop_policy(self, device):
+    @pytest.mark.parametrize("first_order", (True, False))
+    def test_open_loop_policy(self, device, first_order):
         with initialize(config_path="./config"):
             self.cfg = compose(config_name="policy_params")
             self.cfg.policy.device = device
+            self.cfg.policy.first_order = first_order
 
         policy = TimeVaryingOpenLoopPolicy(2, 2, self.cfg.policy.T)
         params = self.initialize_problem(device, policy, self.cfg)
@@ -226,10 +250,12 @@ class TestDRiskScoreOptimizer:
         optimizer.iterate()
 
     @pytest.mark.parametrize("device", ("cpu", "cuda"))
-    def test_state_feedback_policy(self, device):
+    @pytest.mark.parametrize("first_order", (True, False))
+    def test_state_feedback_policy(self, device, first_order):
         with initialize(config_path="./config"):
             self.cfg = compose(config_name="policy_params")
             self.cfg.policy.device = device
+            self.cfg.policy.first_order = first_order
 
         policy = TimeVaryingStateFeedbackPolicy(2, 2, self.cfg.policy.T)
         params = self.initialize_problem(device, policy, self.cfg)
@@ -238,10 +264,12 @@ class TestDRiskScoreOptimizer:
         optimizer.iterate()
 
     @pytest.mark.parametrize("device", ("cpu", "cuda"))
-    def test_nn_policy(self, device):
+    @pytest.mark.parametrize("first_order", (True, False))
+    def test_nn_policy(self, device, first_order):
         with initialize(config_path="./config"):
             self.cfg = compose(config_name="policy_params")
             self.cfg.policy.device = device
+            self.cfg.policy.first_order = first_order
 
         network = MLP(2, 2, [128, 128])
         policy = NNPolicy(2, 2, network)

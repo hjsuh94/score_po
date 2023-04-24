@@ -9,7 +9,7 @@ policy:
   save_best_model: null
   load_ckpt: null
   device: "cuda"
-
+  first_order: True
   beta: 0.1 # For score-function weighting
 
   wandb:
