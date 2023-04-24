@@ -173,12 +173,12 @@ class TestEnsemble:
 class TestNormalizer:
     @pytest.mark.parametrize("device", ("cpu", "cuda"))
     def test_constructor(self, device):
-        dut1 = mut.Normalizer(k=None, b=None)
+        dut1 = mut.Normalizer(k=torch.tensor([2.]), b=torch.tensor([3.]))
         dut1.to(device)
         assert dut1.k.device.type == device
         assert dut1.b.device.type == device
-        assert dut1.k.item() == 1
-        assert dut1.b.item() == 0
+        assert dut1.k.item() == 2
+        assert dut1.b.item() == 3
         assert len(dut1.state_dict()) == 2
         assert len(list(dut1.parameters())) == 0
 

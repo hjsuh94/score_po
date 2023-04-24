@@ -5,7 +5,8 @@ dataset_load_path: /home/hongkaidai/score_po_data/cartpole/dataset.pth
 wandb_enabled: True
 wandb_entity: daihongkai
 
-dynamics_load_ckpt: /home/hongkaidai/score_po_data/cartpole/2023-04-18/11-06-14/checkpoint/checkpoint.pth
-load_swingup_policy: null #/home/hongkaidai/score_po_data/cartpole/2023-04-11/20-38-40/swingup_openloop_policy.pth
+dynamics_load_ckpt: /home/hongkaidai/score_po_data/cartpole/2023-04-20/15-11-54/checkpoint/checkpoint.pth
+load_swingup_policy: /home/hongkaidai/score_po_data/cartpole/2023-04-21/20-04-35/swingup_openloop_policy.pth
 save_swingup_policy: ${user.run_dir}/swingup_openloop_policy.pth
 save_score_ckpt: ${user.run_dir}/score/checkpoint.pth
+score_estimator_load_ckpt: /home/hongkaidai/score_po_data/cartpole/2023-04-21/18-01-45/score/checkpoint.pth

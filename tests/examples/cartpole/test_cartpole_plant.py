@@ -44,35 +44,41 @@ class TestCartpoleNNDynamicalSystem:
     @pytest.mark.parametrize("device", ("cpu", "cuda"))
     def test_constructor(self, device):
         hidden_layers = [8, 4]
-        x_normalizer = Normalizer(k=torch.tensor([2, np.pi, 3, 10]), b=None)
-        u_normalizer = Normalizer(k=torch.tensor([80]), b=None)
+        x_normalizer = Normalizer(
+            k=torch.tensor([2, np.pi, 3, 10]), b=torch.tensor([0, 0, 0, 0.0])
+        )
+        u_normalizer = Normalizer(k=torch.tensor([80]), b=torch.tensor([0.0]))
         dut = mut.CartpoleNNDynamicalSystem(
             hidden_layers, device, x_normalizer, u_normalizer
         )
         assert dut.net.mlp[0].weight.data.device.type == device
-
 
     @pytest.mark.parametrize("device", ("cpu", "cuda"))
     @pytest.mark.parametrize("eval", (False, True))
     def test_dynamics_batch(self, device, eval):
         torch.manual_seed(123)
         hidden_layers = [8, 4]
-        x_normalizer = Normalizer(k=torch.tensor([2, np.pi, 3, 10]), b=None)
-        u_normalizer = Normalizer(k=torch.tensor([80]), b=None)
+        x_normalizer = Normalizer(
+            k=torch.tensor([2, np.pi, 3, 10]), b=torch.tensor([0, 0, 0, 0.0])
+        )
+        u_normalizer = Normalizer(k=torch.tensor([80]), b=torch.tensor([0]))
         dut = mut.CartpoleNNDynamicalSystem(
             hidden_layers, device, x_normalizer, u_normalizer
         ).to(device)
 
         batch_size = 20
         x_batch = torch.rand((batch_size, 4), device=device)
-        u_batch = (torch.rand((batch_size, 1), device=device) - 0.5)  * 80
+        u_batch = (torch.rand((batch_size, 1), device=device) - 0.5) * 80
         xnext = dut.dynamics_batch(x_batch, u_batch, eval)
         assert xnext.shape == x_batch.shape
 
-        x_normalized = x_normalizer(x_batch) 
-        u_normalized = u_normalizer(u_batch) 
+        x_normalized = x_normalizer(x_batch)
+        u_normalized = u_normalizer(u_batch)
         xnext_expected = (
-            x_normalizer.denormalize(dut.net(torch.concat((x_normalized, u_normalized), dim=1))) + x_batch
+            x_normalizer.denormalize(
+                dut.net(torch.concat((x_normalized, u_normalized), dim=1))
+            )
+            + x_batch
         )
         np.testing.assert_allclose(
             xnext.cpu().detach().numpy(), xnext_expected.cpu().detach().numpy()
