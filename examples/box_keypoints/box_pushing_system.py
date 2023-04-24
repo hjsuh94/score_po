@@ -1,7 +1,7 @@
 import torch
 import numpy as np
 import matplotlib.pyplot as plt
-from matplotlib.patches import Circle
+from matplotlib.patches import Polygon
 import os
 
 import hydra
@@ -32,7 +32,7 @@ from pydrake.systems.primitives import LogVectorOutput
 from pydrake.trajectories import PiecewisePolynomial
 
 
-from score_po.dynamical_system import DynamicalSystem, NNDynamicalSystem
+from score_po.dynamical_system import DynamicalSystem
 
 
 class PlanarPusherSystem(DynamicalSystem):
@@ -241,68 +241,3 @@ class PlanarPusherSystem(DynamicalSystem):
         for b in range(B):
             xnext_batch[b] = self.dynamics(x_batch[b], u_batch[b])
         return xnext_batch
-
-
-class KeypointPusherSystem(NNDynamicalSystem):
-    def __init__(self, network, project_dir="."):
-        super().__init__(dim_x=12, dim_u=2, network=network)
-        self.pusher_radius = 0.02
-        self.dynamics_true = PlanarPusherSystem(project_dir)
-
-    def pose_to_keypoints_x(self, x):
-        """
-        Given a pose state of [x_box, y_box, theta, x_pusher, y_pusher],
-        convert to keypoint states of [keypoints, x_pusher, y_pusher]
-        """
-        keypts = torch.Tensor(self.dynamics_true.get_keypoints(x[0:3])).flatten()
-        pusher = torch.Tensor(x[3:5])
-        return torch.hstack((keypts, pusher))
-
-    def render_dynamics_test(self, x_true, u):
-        """
-        This function visually renders dynamics given true state and input.
-        x is the true state, and xbar is the keypoint state appended with pusher.
-        """
-
-        # Compute current keypoints.
-        xbar_true = self.pose_to_keypoints_x(x_true)
-        keypts_now = xbar_true[0:10].reshape(2, 5)
-        print(keypts_now)
-
-        # Compute true dynamics.
-        xnext_true = self.dynamics_true.dynamics(x_true, u)
-        xbarnext_true = self.pose_to_keypoints_x(xnext_true)
-        keypts_true = xbarnext_true[0:10].reshape(2, 5)
-
-        # Compute predicted dynamics.
-        xbar_true = self.pose_to_keypoints_x(x_true)
-        xbarnext_pred = self.dynamics(xbar_true, torch.Tensor(u)).detach().numpy()
-        keypts_pred = xbarnext_pred[0:10].reshape(2, 5)
-
-        # Plot keypoints.
-        plt.figure()
-        plt.plot(keypts_now[0, :], keypts_now[1, :], "ko", label="current")
-        plt.plot(keypts_true[0, :], keypts_true[1, :], "bo", label="true")
-        plt.plot(keypts_pred[0, :], keypts_pred[1, :], "ro", label="predicted")
-
-        # Plot the pusher
-        circle_now = Circle(
-            x_true[3:5], radius=self.pusher_radius, edgecolor="k", fill=False
-        )
-        plt.gca().add_patch(circle_now)
-
-        circle_next = Circle(
-            xnext_true[3:5], radius=self.pusher_radius, edgecolor="b", fill=False
-        )
-        plt.gca().add_patch(circle_next)
-
-        circle_pred = Circle(
-            xbarnext_pred[10:12], radius=self.pusher_radius, edgecolor="r", fill=False
-        )
-        plt.gca().add_patch(circle_pred)
-
-        # Add arrow indicating action
-        plt.arrow(x_true[3], x_true[4], u[0], u[1])
-        plt.axis("equal")
-        plt.legend()
-        plt.show()
