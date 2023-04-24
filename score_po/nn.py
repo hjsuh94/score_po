@@ -381,15 +381,16 @@ class Normalizer(nn.Module):
     and k is the normalizing constant. We require this transformation to be invertible.
 
     Note that `b` and `k` are NOT parameters for optimization. They are constant values.
+    `b` and `k` must have consistent size with x.
     """
 
-    def __init__(self, k: Optional[torch.Tensor], b: Optional[torch.Tensor]):
+    def __init__(self, k: torch.Tensor, b: torch.Tensor):
         """
         This module will outputx ̅(i) = (x(i) − b(i))/k(i)
         """
         super().__init__()
-        self.register_buffer("k", torch.tensor(1.0) if k is None else k)
-        self.register_buffer("b", torch.tensor(0.0) if b is None else b)
+        self.register_buffer("k", k)
+        self.register_buffer("b", b)
 
     def forward(self, x):
         return (x - self.b) / self.k

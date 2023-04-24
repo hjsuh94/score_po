@@ -8,7 +8,7 @@ import torch
 import wandb
 
 from examples.cartpole.cartpole_plant import CartpolePlant, CartpoleNNDynamicalSystem
-from score_po.nn import TrainParams
+from score_po.nn import TrainParams, Normalizer
 
 
 def generate_data(
@@ -101,13 +101,17 @@ def main(cfg: DictConfig):
     # The bounds on the state and control are loose outer bounds of a trajectory that
     # swings up the cart-pole, that swing-up trajectory is obtained from
     # Underactuated dircol.ipynb
+    x_lo = torch.tensor([-1, -np.pi, -3, -12])
+    x_up = torch.tensor([1, 1.5 * np.pi, 3, 12])
+    u_lo = torch.tensor([-cfg.nn_plant.u_max])
+    u_up = torch.tensor([cfg.nn_plant.u_max])
+    x_normalizer = Normalizer(k=(x_up - x_lo) / 2, b=(x_up + x_lo) / 2)
+    u_normalizer = Normalizer(k=(u_up - u_lo) / 2, b=(u_up + u_lo) / 2)
     nn_plant = CartpoleNNDynamicalSystem(
         hidden_layers=cfg.nn_plant.hidden_layers,
-        x_lo=torch.tensor([-1, -np.pi, -3, -12]),
-        x_up=torch.tensor([1, 1.5 * np.pi, 3, 12]),
-        u_lo=torch.tensor([-cfg.nn_plant.u_max]),
-        u_up=torch.tensor([cfg.nn_plant.u_max]),
         device=device,
+        x_normalizer=x_normalizer,
+        u_normalizer=u_normalizer,
     )
 
     if cfg.dataset.load_path is None:
@@ -115,9 +119,9 @@ def main(cfg: DictConfig):
             cart_length=0.5,
             left_wall=-2.0,
             right_wall=2.0,
-            theta_range=[nn_plant.x_lo[1].item(), nn_plant.x_up[1].item()],
-            cart_vel_range=[nn_plant.x_lo[2].item(), nn_plant.x_up[2].item()],
-            thetadot_range=[nn_plant.x_lo[3].item(), nn_plant.x_up[3].item()],
+            theta_range=[x_lo[1].item(), x_up[1].item()],
+            cart_vel_range=[x_lo[2].item(), x_up[2].item()],
+            thetadot_range=[x_lo[3].item(), x_up[3].item()],
             dt=cfg.nn_plant.dt,
             u_max=cfg.nn_plant.u_max,
             sample_size=cfg.dataset.sample_size,
