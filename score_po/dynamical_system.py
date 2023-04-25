@@ -57,6 +57,8 @@ class NNDynamicalSystem(DynamicalSystem):
     Neural network dynamical system, where the network is of
     - input shape (n + m)
     - output shape (n)
+    We train the network to predict the residual dynamics in the 
+    normalized space, such that net(xnow, u) = xnext - xnow
     """
 
     def __init__(
@@ -72,10 +74,14 @@ class NNDynamicalSystem(DynamicalSystem):
         self.is_differentiable = True
         self.check_input_consistency()
         self.x_normalizer: Normalizer = (
-            Normalizer(k=torch.ones(dim_x), b=torch.zeros(dim_x)) if x_normalizer is None else x_normalizer
+            Normalizer(k=torch.ones(dim_x), b=torch.zeros(dim_x))
+            if x_normalizer is None
+            else x_normalizer
         )
         self.u_normalizer: Normalizer = (
-            Normalizer(k=torch.ones(dim_u), b=torch.zeros(dim_u)) if u_normalizer is None else u_normalizer
+            Normalizer(k=torch.ones(dim_u), b=torch.zeros(dim_u))
+            if u_normalizer is None
+            else u_normalizer
         )
 
     def check_input_consistency(self):
@@ -97,12 +103,16 @@ class NNDynamicalSystem(DynamicalSystem):
         u_normalized = self.u_normalizer(u_batch)
         normalized_input = torch.hstack((x_normalized, u_normalized))
         normalized_output = self.net(normalized_input)
-        return self.x_normalizer.denormalize(normalized_output)
+        # we don't use self.x_normalizer.denormalize since in the 
+        # residual dynamics, the bias terms cancel out.
+        return self.x_normalizer.k * normalized_output + x_batch
 
     def forward(self, x, u, eval):
         return self.dynamics_batch(x, u, eval)
 
-    def evaluate_dynamic_loss(self, xu, x_next, sigma=0.0, normalize_loss: bool=False):
+    def evaluate_dynamic_loss(
+        self, xu, x_next, sigma=0.0, normalize_loss: bool = False
+    ):
         """
         Evaluate L2 loss.
         data_samples:
@@ -127,7 +137,9 @@ class NNDynamicalSystem(DynamicalSystem):
         loss = 0.5 * ((x_next - pred) ** 2).sum(dim=-1).mean(dim=0)
         return loss
 
-    def train_network(self, dataset: TensorDataset, params: TrainParams, sigma: float=0.0):
+    def train_network(
+        self, dataset: TensorDataset, params: TrainParams, sigma: float = 0.0
+    ):
         """
         Train a network given a dataset and optimization parameters.
         """

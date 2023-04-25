@@ -52,7 +52,7 @@ class TestNNDynamicalSystem:
         x_normalized = x_normalizer(x_tensor)
         u_normalized = u_normalizer(u_tensor)
         normalized_input = torch.cat((x_normalized, u_normalized), dim=-1)
-        output_expected = x_normalizer.denormalize(network(normalized_input))
+        output_expected = x_normalizer.k * network(normalized_input) + x_tensor
         np.testing.assert_allclose(
             output_expected.cpu().detach().numpy(),
             dynamics.dynamics_batch(x_tensor, u_tensor).cpu().detach().numpy(),
