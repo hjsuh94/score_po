@@ -120,10 +120,14 @@ class NNCost(Cost):
         self.is_differentiable = True
         self.check_input_consistency()
         self.x_normalizer: Normalizer = (
-            Normalizer(k=None, b=None) if x_normalizer is None else x_normalizer
+            Normalizer(k=torch.ones(dim_x), b=torch.zeros(dim_x))
+            if x_normalizer is None
+            else x_normalizer
         )
         self.u_normalizer: Normalizer = (
-            Normalizer(k=None, b=None) if u_normalizer is None else u_normalizer
+            Normalizer(k=torch.ones(dim_u), b=torch.zeros(dim_u))
+            if u_normalizer is None
+            else u_normalizer
         )
 
     def check_input_consistency(self):
@@ -131,7 +135,7 @@ class NNCost(Cost):
             self.net.dim_in is not self.dim_x + self.dim_u
         ):
             raise ValueError("Inconsistent input size of neural network.")
-        if hasattr(self.net, "dim_out") and (self.net.dim_out is not 1):
+        if hasattr(self.net, "dim_out") and (self.net.dim_out != 1):
             raise ValueError("Inconsistent output size of neural network.")
 
     def get_running_cost(self, x, u):
