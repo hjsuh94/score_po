@@ -57,6 +57,8 @@ class NNDynamicalSystem(DynamicalSystem):
     Neural network dynamical system, where the network is of
     - input shape (n + m)
     - output shape (n)
+    We train the network to predict the residual dynamics in the 
+    normalized space, such that net(xnow, u) = xnext - xnow
     """
 
     def __init__(
@@ -101,6 +103,8 @@ class NNDynamicalSystem(DynamicalSystem):
         u_normalized = self.u_normalizer(u_batch)
         normalized_input = torch.hstack((x_normalized, u_normalized))
         normalized_output = self.net(normalized_input)
+        # we don't use self.x_normalizer.denormalize since in the 
+        # residual dynamics, the bias terms cancel out.
         return self.x_normalizer.k * normalized_output + x_batch
 
     def forward(self, x, u, eval):

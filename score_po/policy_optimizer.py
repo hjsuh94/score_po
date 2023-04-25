@@ -173,7 +173,7 @@ class PolicyOptimizer:
         We compute a loss so that when autodiffed w.r.t. the policy parameters,
         the resulting gradient gives the zeroth-order gradient with Gaussian noise:
         1/N \sum_i^N (1/sigma^2) * Vbar(x_i0, w_it) * [\sum_t (D\pi(x_it, theta)^T w_it)],
-        where bar(x_i0, w_it) = V(x_i0, w_it) - V(x_i0, 0).
+        where Vbar(x_i0, w_it) = V(x_i0, w_it) - V(x_i0, 0).
         The notation is as follows,
             - x_i0: the ith sample of the initial state.
             - w_it: the ith sample of the noise trajectory at time t.
