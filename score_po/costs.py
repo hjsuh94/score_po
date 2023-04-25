@@ -26,7 +26,7 @@ class Cost(torch.nn.Module):
         output:
             cost of scalar.
         """
-        raise ValueError("virtual function.")
+        return self.get_running_cost_batch(x.unsqueeze(0), u.unsqueeze(0)).squeeze(0)
 
     def get_running_cost_batch(self, x_batch, u_batch):
         """
@@ -46,7 +46,7 @@ class Cost(torch.nn.Module):
         output:
             cost of shape scalar.
         """
-        raise ValueError("virtual function.")
+        return self.get_terminal_cost_batch(x.unsqueeze(0)).squeeze(0)
 
     def get_terminal_cost_batch(self, x_batch):
         """

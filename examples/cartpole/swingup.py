@@ -14,7 +14,7 @@ from score_po.policy_optimizer import (
     DRiskScorePolicyOptimizer,
     DRiskScorePolicyOptimizerParams,
 )
-from score_po.score_matching import ScoreEstimator
+from score_po.score_matching import ScoreEstimatorXu
 from score_po.costs import QuadraticCost
 from score_po.policy import TimeVaryingOpenLoopPolicy
 from examples.cartpole.score_training import get_score_network
@@ -51,7 +51,7 @@ def plot_result(policy_optimizer: PolicyOptimizer):
 def single_shooting(
     dynamical_system: CartpoleNNDynamicalSystem,
     x0: torch.Tensor,
-    score_estimator: ScoreEstimator,
+    score_estimator: ScoreEstimatorXu,
     cfg: DictConfig,
 ) -> torch.Tensor:
     """
@@ -95,7 +95,7 @@ def main(cfg: DictConfig):
     plant = CartpolePlant(dt=0.1)
 
     score_network = get_score_network()
-    sf = ScoreEstimator(dim_x=4, dim_u=1, network=score_network).to(device)
+    sf = ScoreEstimatorXu(dim_x=4, dim_u=1, network=score_network).to(device)
     sf.load_state_dict(torch.load(cfg.score_estimator_load_ckpt))
 
     single_shooting(
