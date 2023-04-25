@@ -1,0 +1,39 @@
+defaults:
+  - user: hongkai
+  - corridor_parameter: corridor1
+
+hydra:
+  run:
+    dir: ${user.run_dir}
+
+device: "cuda"
+seed: 123
+nn_plant:
+  dt: 0.1
+  hidden_layers: [8, 4]
+
+corridor_width: ${corridor_parameter.corridor_width}
+horizontal_max: ${corridor_parameter.horizontal_max}
+vertical_max: ${corridor_parameter.vertical_max}
+u_lo: ${corridor_parameter.u_lo}
+u_up: ${corridor_parameter.u_up}
+
+dataset:
+  load_path: ${user.dataset_load_path}
+  sample_size: 1000000
+
+train:
+  wandb:
+    enabled: ${user.wandb_enabled}
+    project: score_po
+    dir: ${user.run_dir}
+    name: ${now:%Y.%m.%d-%H.%M.%S}_corridor
+    entity: ${user.wandb_entity}
+  adam:
+    lr: 1e-3
+    epochs: 300
+    batch_size: 1024
+  dataset_split: [0.8, 0.2]
+  save_best_model: checkpoint/checkpoint.pth
+  load_ckpt: null
+  device: "cuda"
