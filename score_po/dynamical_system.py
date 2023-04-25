@@ -72,10 +72,14 @@ class NNDynamicalSystem(DynamicalSystem):
         self.is_differentiable = True
         self.check_input_consistency()
         self.x_normalizer: Normalizer = (
-            Normalizer(k=None, b=None) if x_normalizer is None else x_normalizer
+            Normalizer(k=torch.ones(dim_x), b=torch.zeros(dim_x))
+            if x_normalizer is None
+            else x_normalizer
         )
         self.u_normalizer: Normalizer = (
-            Normalizer(k=None, b=None) if u_normalizer is None else u_normalizer
+            Normalizer(k=torch.ones(dim_u), b=torch.zeros(dim_u))
+            if u_normalizer is None
+            else u_normalizer
         )
 
     def check_input_consistency(self):
@@ -90,7 +94,6 @@ class NNDynamicalSystem(DynamicalSystem):
         return self.dynamics_batch(x.unsqueeze(0), u.unsqueeze(0), eval).squeeze(0)
 
     def dynamics_batch(self, x_batch, u_batch, eval=True):
-        """We assume self.net stores residual dynamics in the normalized space."""
         if eval:
             self.net.eval()
 
@@ -98,8 +101,6 @@ class NNDynamicalSystem(DynamicalSystem):
         u_normalized = self.u_normalizer(u_batch)
         normalized_input = torch.hstack((x_normalized, u_normalized))
         normalized_output = self.net(normalized_input)
-        # Note we don't use denormalize since the bias terms are cancelled for
-        # residual dynanmics.
         return self.x_normalizer.k * normalized_output + x_batch
 
     def forward(self, x, u, eval):
