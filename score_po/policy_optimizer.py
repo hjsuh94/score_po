@@ -206,18 +206,24 @@ class PolicyOptimizer:
         )
 
         # 1. Rollout the policy and get costs.
-        _, u_trj_batch = self.rollout_policy_batch(x0_batch, noise_trj_batch)
+        x_trj_batch, _ = self.rollout_policy_batch(x0_batch, noise_trj_batch)
+        x_trj_batch = x_trj_batch.clone().detach()
         cost_batch = (
             self.evaluate_cost_batch(x0_batch, noise_trj_batch).clone().detach()
         )
         cost_baseline = (
             self.evaluate_cost_batch(x0_batch, zero_noise_trj).clone().detach()
         )
+        
+        u_trj_batch = torch.zeros((B, 0, self.ds.dim_u)).to(self.params.device)      
+        for t in range(self.params.T):
+            u_t_batch = self.policy(x_trj_batch[:, t, :], t)
+            u_trj_batch = torch.hstack((u_trj_batch, u_t_batch[:, None, :]))
 
         # 2. Compute zeroth-order loss
         # We subtract u_trj_batch - noise_trj_batch to obtain \pi(x_it, theta).
         jcb_sum = torch.einsum(
-            "btu,btu->b", u_trj_batch - noise_trj_batch, noise_trj_batch
+            "btu,btu->b", u_trj_batch, noise_trj_batch
         )
         return torch.mean((cost_batch - cost_baseline) * jcb_sum) / (
             self.params.std**2
