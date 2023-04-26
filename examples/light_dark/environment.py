@@ -2,8 +2,6 @@ import numpy as np
 import torch
 import matplotlib.pyplot as plt
 
-from score_po.score_matching import ScoreEstimator
-
 
 class Environment:
     """
