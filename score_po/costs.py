@@ -145,15 +145,15 @@ class NNCost(Cost):
         x_normalized = self.x_normalizer(x_batch)
         u_normalized = self.u_normalizer(u_batch)
         normalized_input = torch.hstack((x_normalized, u_normalized))
-        return self.net(normalized_input)
+        return self.net(normalized_input).squeeze(1)
 
     def get_terminal_cost(self, x):
         """We assume the learned cost does not have any terminal costs."""
-        return torch.zeros(1)
+        return torch.zeros(1).to(x.device)
 
     def get_terminal_cost_batch(self, x_batch):
         """We assume the learned cost does not have any terminal costs."""
-        return torch.zeros((x_batch.shape[0]))
+        return torch.zeros((x_batch.shape[0])).to(x_batch.device)
 
     def train_network(
         self, dataset: TensorDataset, params: TrainParams, sigma: float = 0.0
@@ -165,6 +165,6 @@ class NNCost(Cost):
         def loss(tensors, placeholder):
             x, u, c_true = tensors
             cost_pred = self.get_running_cost_batch(x, u)
-            return 0.5 * ((cost_pred - c_true[:, None]) ** 2).mean(dim=0)
+            return 0.5 * ((cost_pred - c_true) ** 2).mean(dim=0)
 
         return score_po.nn.train_network(self, params, dataset, loss, split=True)
