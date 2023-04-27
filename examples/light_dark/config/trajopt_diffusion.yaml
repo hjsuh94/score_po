@@ -5,25 +5,28 @@ hydra:
   run:
     dir: ${user.run_dir}
 
-nn_layers: [512, 512]    
+nn_layers: [512, 512]
+plot_period: 10
+sf_path: "examples/light_dark/weights/checkpoint_xux_015.pth"
 
 trj:
-  T: 1000
+  T: 25
   x0: [0.8, 0.2]
   xT: [-0.8, 0.2]
   batch_size: 1 # 1 for trajopt.
-  lr: 1e-1
+  lr: 1e-2
   max_iters: 300
   save_best_model: checkpoint.pth
+  saving_period: 100
   load_ckpt: null
   device: "cuda"
-  beta: 1
+  beta: 1000
 
   wandb:
     enabled: ${user.wandb_enabled}
     project: score_po
     dir: ${user.run_dir}
-    name: ${now:%Y.%m.%d-%H.%M.%S}_distance_likelihood
+    name: ${now:%Y.%m.%d-%H.%M.%S}
     entity: ${user.wandb_entity}
 
 cost:

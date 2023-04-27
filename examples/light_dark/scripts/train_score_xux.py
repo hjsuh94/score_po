@@ -29,7 +29,7 @@ def main(cfg: DictConfig):
     network = MLP(6, 6, cfg.nn_layers)
     sf = ScoreEstimatorXux(
         2, 2, network, x_normalizer=None, u_normalizer=u_normalizer)
-    sf.train_network(dataset, params, sigma=0.05)
+    sf.train_network(dataset, params, sigma=1.0)
 
 
 if __name__ == "__main__":

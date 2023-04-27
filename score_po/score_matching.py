@@ -164,7 +164,9 @@ class ScoreEstimatorXu(torch.nn.Module):
         """
         Train a network given a dataset and optimization parameters.
         """
-        # We assume z_batch is (x_batch, u_batch)
+        # Retain memory of the noise level.
+        self.sigma = sigma    
+        # We assume z_batch is (x_batch, u_batch)        
         loss_fn = lambda z_batch, net: self.evaluate_loss(
             z_batch[0], z_batch[1], sigma)
         loss_lst = train_network(self, params, dataset, loss_fn, split)
@@ -292,10 +294,12 @@ class ScoreEstimatorXux(ScoreEstimatorXu):
         """
         Train a network given a dataset and optimization parameters.
         """
+        self.sigma = sigma # retain memory of noise level.
         # We assume z_batch is (x_batch, u_batch, xnext_batch)
         loss_fn = lambda z_batch, net: self.evaluate_loss(
             z_batch[0], z_batch[1], z_batch[2], sigma)
         loss_lst = train_network(self, params, dataset, loss_fn, split)
+
         return loss_lst    
 
 

@@ -28,7 +28,7 @@ def main(cfg: DictConfig):
     network = MLP(6, 6, cfg.nn_layers)
     sf = ScoreEstimatorXux(2, 2, network)
     sf.load_state_dict(torch.load(os.path.join(
-        get_original_cwd(), "examples/light_dark/weights/checkpoint_xux.pth"
+        get_original_cwd(), cfg.sf_path
     )))
     params.sf = sf
     
@@ -49,33 +49,32 @@ def main(cfg: DictConfig):
     # 5. Define callback function
     
     def callback(params: TrajectoryOptimizerParams, loss: float, iter: int):
-        x_trj, u_trj = params.trj.get_full_trajectory()
-        x_trj = x_trj.detach().cpu().numpy()
-        u_trj = u_trj.detach().cpu().numpy()
+        if iter % cfg.plot_period == 0:
+            x_trj, u_trj = params.trj.get_full_trajectory()
+            x_trj = x_trj.detach().cpu().numpy()
+            u_trj = u_trj.detach().cpu().numpy()
+            
+            colormap = get_cmap('winter')
+            
+            plt.figure(figsize=(8,8))
+            for t in range(cfg.trj.T + 1):
+                plt.plot(x_trj[t,0], x_trj[t,1], marker='o', color=colormap(
+                    t / (cfg.trj.T + 1)
+                ))
+            for t in range(cfg.trj.T):
+                plt.arrow(x_trj[t,0], x_trj[t,1], u_trj[t,0], u_trj[t, 1], color=colormap(
+                t / cfg.trj.T))
+            circle = Circle([0, 0], 0.4, fill=True, color='k')
+            plt.gca().add_patch(circle)
+            plt.axis('equal')
+            plt.xlim([-1, 1])
+            plt.ylim([-1, 1])            
+            plt.savefig("{:04d}.png".format(iter))
+            plt.close()
         
-        colormap = get_cmap('winter')
-        
-        plt.figure()
-        for t in range(cfg.trj.T):
-            plt.plot(x_trj[t,0], x_trj[t,1], marker='o', color=colormap(
-                t / cfg.trj.T
-            ))
-        #for t in range(cfg.trj.T - 1):
-        #    plt.plot(x_trj[t:t+2,0], x_trj[t:t+2,1], color=colormap(
-        #        t / cfg.trj.T
-        #    ))
-        circle = Circle([0, 0], 0.4, fill=True, color='k')
-        plt.gca().add_patch(circle)
-        plt.axis('equal')
-        plt.savefig("{:04d}.png".format(iter))
-        plt.close()
-    
     # 5. Run 
     optimizer = TrajectoryOptimizerSF(params)
     optimizer.iterate(callback)
-    
-    # 6. Plot
-    x_trj, u_trj = trj.get_full_trajectory()
 
 
 if __name__ == "__main__":

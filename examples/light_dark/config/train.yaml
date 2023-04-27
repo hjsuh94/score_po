@@ -16,10 +16,10 @@ train:
     name: ${now:%Y.%m.%d-%H.%M.%S}_cartpole
     entity: ${user.wandb_entity}
   adam:
-    lr: 1e-3
-    epochs: 1000
+    lr: 1e-2
+    epochs: 250
     batch_size: 1024
   dataset_split: [0.99, 0.01]
-  save_best_model: checkpoint_xux.pth
+  save_best_model: checkpoint_xux_05.pth
   load_ckpt: null
   device: "cuda"

@@ -28,6 +28,7 @@ class TrajectoryOptimizerParams:
     first_order: bool = True
     load_ckpt: Optional[str] = None
     save_best_model: Optional[str] = None
+    saving_period: Optional[int] = 100
     device: str = "cuda"
     torch_optimizer: torch.optim.Optimizer = torch.optim.Adam
 
@@ -39,6 +40,7 @@ class TrajectoryOptimizerParams:
         self.lr = cfg.trj.lr
         self.max_iters = cfg.trj.max_iters
         self.save_best_model = cfg.trj.save_best_model
+        self.saving_period = cfg.trj.saving_period
         self.load_ckpt = cfg.trj.load_ckpt
         self.device = cfg.trj.device
         self.beta = cfg.trj.beta
@@ -69,6 +71,8 @@ class TrajectoryOptimizerSF:
     
     def modify_gradients(self, beta):
         # Modify value loss by applying score function.
+        # TODO(terry-suh): Changing this to batch implementation will
+        # result in a much better speedup.
         x_trj, u_trj = self.trj.get_full_trajectory()
         for t in range(self.params.T):
             x = x_trj[t][None,:]
@@ -81,23 +85,23 @@ class TrajectoryOptimizerSF:
             u_score = u_score.squeeze(0)
             xnext_score = xnext_score.squeeze(0)
             
-            sign = -1
+            weight = -1 / self.params.sf.sigma ** 2
             
             if t == 0:
-                self.trj.xnext_trj.grad[t] += sign * beta * xnext_score
-                self.trj.u_trj.grad[t] += sign * beta * u_score
+                self.trj.xnext_trj.grad[t] += weight * beta * xnext_score
+                self.trj.u_trj.grad[t] += weight * beta * u_score
             elif t == self.params.T-1:
                 if isinstance(self.trj, BVPTrajectory):
-                    self.trj.xnext_trj.grad[t-1] += sign * beta * x_score
-                    self.trj.u_trj.grad[t] += sign * beta * u_score
+                    self.trj.xnext_trj.grad[t-1] += weight * beta * x_score
+                    self.trj.u_trj.grad[t] += weight * beta * u_score
                 else:
-                    self.trj.xnext_trj.grad[t-1] += sign * beta * x_score
-                    self.trj.xnext_trj.grad[t] += sign * beta * xnext_score
-                    self.trj.u_trj.grad[t] += sign * beta * u_score                
+                    self.trj.xnext_trj.grad[t-1] += weight * beta * x_score
+                    self.trj.xnext_trj.grad[t] += weight * beta * xnext_score
+                    self.trj.u_trj.grad[t] += weight * beta * u_score                
             else: 
-                self.trj.xnext_trj.grad[t-1] += sign * x_score
-                self.trj.xnext_trj.grad[t] += sign * xnext_score
-                self.trj.u_trj.grad[t] += sign * u_score
+                self.trj.xnext_trj.grad[t-1] += weight * x_score
+                self.trj.xnext_trj.grad[t] += weight * xnext_score
+                self.trj.u_trj.grad[t] += weight * u_score
 
             
     def initialize(self):
@@ -113,7 +117,7 @@ class TrajectoryOptimizerSF:
 
     def iterate(self, callback=None):
         """
-        Callback is a function that can be called with signature 
+        Callback is a function that can be called with weightature 
         f(params, loss, iter)
         """
         if self.params.wandb_params.enabled:
@@ -159,13 +163,13 @@ class TrajectoryOptimizerSF:
 
             if self.params.wandb_params.enabled:
                 wandb.log({"trj_loss": loss.item()})
-            if self.params.save_best_model is not None and loss.item() < best_cost:
+            if self.params.save_best_model is not None and (
+                self.params.saving_period % self.params.saving_period == 0):
                 model_path = os.path.join(os.getcwd(), self.params.save_best_model)
                 model_dir = os.path.dirname(model_path)
                 if not os.path.exists(model_dir):
                     os.makedirs(model_dir, exist_ok=True)
                 save_module(self.trj, model_path)
-                best_cost = loss.item()
 
             print(
                 "Iteration: {:04d} | Cost: {:.3f} | Time: {:.3f}".format(
