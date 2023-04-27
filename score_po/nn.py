@@ -245,7 +245,12 @@ def tuple_to_device(tup, device):
 
 
 def train_network(
-    net: nn.Module, params: TrainParams, dataset: TensorDataset, loss_fn, split=True
+    net: nn.Module,
+    params: TrainParams,
+    dataset: TensorDataset,
+    loss_fn,
+    split=True,
+    augment_data=None,
 ):
     """
     Common utility function to train a neural network.
@@ -253,6 +258,8 @@ def train_network(
     params: TrainParams
     loss_fn: a loss function for the optimization problem.
     loss_fn should have signature loss_fn(x_batch, net)
+    augment_data: a data augmentation function.
+    Should accept z_batch and return z_batch
     """
     if params.wandb_params.enabled:
         if params.wandb_params.dir is not None and not os.path.exists(
@@ -266,6 +273,9 @@ def train_network(
             config=params.wandb_params.config,
             entity=params.wandb_params.entity,
         )
+
+    if augment_data is None:
+        augment_data = lambda x: x
 
     net.train()
 
@@ -297,6 +307,7 @@ def train_network(
     for epoch in tqdm(range(params.adam_params.epochs)):
         for z_batch in data_loader_train:
             optimizer.zero_grad()
+            z_batch = augment_data(z_batch)
             z_batch = tuple_to_device(z_batch, params.device)
             loss = loss_fn(z_batch, net)
             loss.backward()
@@ -404,3 +415,33 @@ def save_module(nn_module: torch.nn.Module, filename: str):
     if not os.path.exists(file_dir):
         os.makedirs(file_dir, exist_ok=True)
     torch.save(nn_module.state_dict(), filename)
+
+def tensor_linspace(start, end, steps=10):
+    # linspace in torch, adopted from https://github.com/zhaobozb/layout2im.
+    """
+    Vectorized version of torch.linspace.
+    Inputs:
+    - start: Tensor of any shape
+    - end: Tensor of the same shape as start
+    - steps: Integer
+    Returns:
+    - out: Tensor of shape start.size() + (steps,), such that
+      out.select(-1, 0) == start, out.select(-1, -1) == end,
+      and the other elements of out linearly interpolate between
+      start and end.
+    """
+    assert start.size() == end.size()
+    view_size = start.size() + (1,)
+    w_size = (1,) * start.dim() + (steps,)
+    out_size = start.size() + (steps,)
+
+    start_w = torch.linspace(1, 0, steps=steps).to(start)
+    start_w = start_w.view(w_size).expand(out_size)
+    end_w = torch.linspace(0, 1, steps=steps).to(start)
+    end_w = end_w.view(w_size).expand(out_size)
+
+    start = start.contiguous().view(view_size).expand(out_size)
+    end = end.contiguous().view(view_size).expand(out_size)
+
+    out = start_w * start + end_w * end
+    return out.to(start.device)

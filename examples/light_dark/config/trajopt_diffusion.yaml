@@ -1,0 +1,33 @@
+defaults:
+  - user: terry
+
+hydra:
+  run:
+    dir: ${user.run_dir}
+
+nn_layers: [512, 512]    
+
+trj:
+  T: 1000
+  x0: [0.8, 0.2]
+  xT: [-0.8, 0.2]
+  batch_size: 1 # 1 for trajopt.
+  lr: 1e-1
+  max_iters: 300
+  save_best_model: checkpoint.pth
+  load_ckpt: null
+  device: "cuda"
+  beta: 1
+
+  wandb:
+    enabled: ${user.wandb_enabled}
+    project: score_po
+    dir: ${user.run_dir}
+    name: ${now:%Y.%m.%d-%H.%M.%S}_distance_likelihood
+    entity: ${user.wandb_entity}
+
+cost:
+  Q: [0, 0]
+  R: [1, 1]
+  Qd: [0, 0]
+  xd: [0, 0]
