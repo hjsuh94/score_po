@@ -339,6 +339,9 @@ class DRiskScorePolicyOptimizer(PolicyOptimizer):
         super().__init__(params=params, **kwargs)
         self.beta = params.beta
         self.sf = params.sf
+        if not isinstance(self.sf, ScoreEstimatorXu):
+            raise TypeError(
+                "DRiskScorePolicyOptimizer only accepts ScoreEstimatorXu.")
 
     def evaluate_score_loss(self, x0_batch, noise_trj_batch):
         """

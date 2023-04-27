@@ -172,7 +172,7 @@ class ScoreEstimatorXu(torch.nn.Module):
         loss_lst = train_network(self, params, dataset, loss_fn, split)
         return loss_lst
     
-class ScoreEstimatorXux(ScoreEstimatorXu):
+class ScoreEstimatorXux(torch.nn.Module):
     """
     Score function estimator that stores the object
     ∇_z log p(z): R^(dim_x + dim_u + dim_x) -> R^(dim_x + dim_u + dim_x), where
@@ -199,7 +199,21 @@ class ScoreEstimatorXux(ScoreEstimatorXu):
           normalized data.
           z_normalizer: The normalizer for z.
         """
-        super().__init__(dim_x, dim_u, network, x_normalizer, u_normalizer)
+        super().__init__()
+        self.dim_x = dim_x
+        self.dim_u = dim_u
+        self.net = network
+        self.sigma = 0.1
+        self.x_normalizer: Normalizer = (
+            Normalizer(k=torch.ones(dim_x), b=torch.zeros(dim_x))
+            if x_normalizer is None
+            else x_normalizer
+        )
+        self.u_normalizer: Normalizer = (
+            Normalizer(k=torch.ones(dim_u), b=torch.zeros(dim_u))
+            if u_normalizer is None
+            else u_normalizer
+        )
         self.check_input_consistency()
 
     def check_input_consistency(self):
@@ -299,7 +313,6 @@ class ScoreEstimatorXux(ScoreEstimatorXu):
         loss_fn = lambda z_batch, net: self.evaluate_loss(
             z_batch[0], z_batch[1], z_batch[2], sigma)
         loss_lst = train_network(self, params, dataset, loss_fn, split)
-
         return loss_lst    
 
 

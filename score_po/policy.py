@@ -57,7 +57,9 @@ class Policy(nn.Module):
         self.dim_u = dim_u
         self.dim_params = 0
         self.params = 0
-        self.tv = True
+        # flag for whether the policy is time-varying, used for 
+        # whether to batch-compute or not.
+        self.tv = True 
         self.u_clip: Clamper = (
             Clamper(lower=None, upper=None, method=Clamper.Method.HARD)
             if u_clip is None
