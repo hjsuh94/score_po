@@ -12,7 +12,8 @@ from omegaconf import DictConfig
 from score_po.score_matching import ScoreEstimatorXux
 from score_po.nn import MLP, TrainParams
 from score_po.trajectory_optimizer import (
-    TrajectoryOptimizerSF, TrajectoryOptimizerParams)
+    TrajectoryOptimizer,
+    TrajectoryOptimizerSF, TrajectoryOptimizerSFParams)
 from score_po.trajectory import BVPTrajectory
 from score_po.costs import QuadraticCost
 
@@ -22,7 +23,7 @@ from examples.light_dark.environment import Environment
 @hydra.main(config_path="../config", config_name="trajopt_diffusion")
 def main(cfg: DictConfig):
     # 1. Set up parameters.
-    params = TrajectoryOptimizerParams()
+    params = TrajectoryOptimizerSFParams()
     
     # 2. Load score function.
     network = MLP(6, 6, cfg.nn_layers)
@@ -48,7 +49,7 @@ def main(cfg: DictConfig):
     
     # 5. Define callback function
     
-    def callback(params: TrajectoryOptimizerParams, loss: float, iter: int):
+    def callback(params: TrajectoryOptimizerSFParams, loss: float, iter: int):
         if iter % cfg.plot_period == 0:
             x_trj, u_trj = params.trj.get_full_trajectory()
             x_trj = x_trj.detach().cpu().numpy()
@@ -73,7 +74,7 @@ def main(cfg: DictConfig):
             plt.close()
         
     # 5. Run 
-    optimizer = TrajectoryOptimizerSF(params)
+    optimizer = TrajectoryOptimizer(params)
     optimizer.iterate(callback)
 
 
