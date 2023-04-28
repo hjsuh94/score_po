@@ -250,7 +250,6 @@ def train_network(
     dataset: TensorDataset,
     loss_fn,
     split=True,
-    augment_data=None,
 ):
     """
     Common utility function to train a neural network.
@@ -258,8 +257,6 @@ def train_network(
     params: TrainParams
     loss_fn: a loss function for the optimization problem.
     loss_fn should have signature loss_fn(x_batch, net)
-    augment_data: a data augmentation function.
-    Should accept z_batch and return z_batch
     """
     if params.wandb_params.enabled:
         if params.wandb_params.dir is not None and not os.path.exists(
@@ -307,7 +304,6 @@ def train_network(
     for epoch in tqdm(range(params.adam_params.epochs)):
         for z_batch in data_loader_train:
             optimizer.zero_grad()
-            z_batch = augment_data(z_batch)
             z_batch = tuple_to_device(z_batch, params.device)
             loss = loss_fn(z_batch, net)
             loss.backward()
