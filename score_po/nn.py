@@ -337,8 +337,7 @@ def train_network(
 
 
 def train_network_sampling(
-    net: nn.Module, params: TrainParams, sample_fn, loss_fn, split=True
-):
+    net: nn.Module, params: TrainParams, sample_fn, loss_fn):
     """
     A variant of train_network that does not use a dataset but a random sampling
     function. The sampling function should have the signature

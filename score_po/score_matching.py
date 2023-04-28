@@ -61,7 +61,6 @@ class ScoreEstimatorXu(torch.nn.Module):
         self.dim_x = dim_x
         self.dim_u = dim_u
         self.net = network
-        self.sigma = 0.1
         self.x_normalizer: Normalizer = (
             Normalizer(k=torch.ones(dim_x), b=torch.zeros(dim_x))
             if x_normalizer is None
@@ -107,10 +106,6 @@ class ScoreEstimatorXu(torch.nn.Module):
         Compute the score ∇_z̅ log p(z̅) for the normalized z̅
         """
         self.net.to(zbar.device)
-        if eval:
-            self.net.eval()
-        else:
-            self.net.train()
         return self.net(zbar)
 
     def get_score_z_given_z(self, z):
@@ -165,10 +160,10 @@ class ScoreEstimatorXu(torch.nn.Module):
         Train a network given a dataset and optimization parameters.
         """
         # Retain memory of the noise level.
-        self.sigma = sigma    
+        self.register_buffer("sigma", sigma) # retain memory of noise level.        
         # We assume z_batch is (x_batch, u_batch)        
         loss_fn = lambda z_batch, net: self.evaluate_loss(
-            z_batch[0], z_batch[1], sigma)
+            z_batch[0], z_batch[1], self.sigma)
         loss_lst = train_network(self, params, dataset, loss_fn, split)
         return loss_lst
     
@@ -203,7 +198,6 @@ class ScoreEstimatorXux(torch.nn.Module):
         self.dim_x = dim_x
         self.dim_u = dim_u
         self.net = network
-        self.sigma = 0.1
         self.x_normalizer: Normalizer = (
             Normalizer(k=torch.ones(dim_x), b=torch.zeros(dim_x))
             if x_normalizer is None
@@ -302,16 +296,16 @@ class ScoreEstimatorXux(torch.nn.Module):
         self,
         dataset: TensorDataset,
         params: TrainParams,
-        sigma,
+        sigma: torch.Tensor,
         split=True,
     ):
         """
         Train a network given a dataset and optimization parameters.
         """
-        self.sigma = sigma # retain memory of noise level.
+        self.register_buffer("sigma", sigma) # retain memory of noise level.
         # We assume z_batch is (x_batch, u_batch, xnext_batch)
         loss_fn = lambda z_batch, net: self.evaluate_loss(
-            z_batch[0], z_batch[1], z_batch[2], sigma)
+            z_batch[0], z_batch[1], z_batch[2], self.sigma)
         loss_lst = train_network(self, params, dataset, loss_fn, split)
         return loss_lst    
 
