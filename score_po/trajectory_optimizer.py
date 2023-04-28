@@ -64,45 +64,28 @@ class TrajectoryOptimizerSF:
         # Loop over trajectories to compute reward loss.
         x_trj, u_trj = self.trj.get_full_trajectory()
         cost = 0.0
-        for t in range(self.params.T):
-            cost += self.cost.get_running_cost(x_trj[t], u_trj[t])
-        cost += self.cost.get_terminal_cost(x_trj[self.params.T])
+        cost += self.cost.get_running_cost_batch(x_trj[:-1], u_trj[:]).sum()
+        cost += self.cost.get_terminal_cost(x_trj[-1])
         return cost
     
     def modify_gradients(self, beta):
         # Modify value loss by applying score function.
-        # TODO(terry-suh): Changing this to batch implementation will
-        # result in a much better speedup.
         x_trj, u_trj = self.trj.get_full_trajectory()
-        for t in range(self.params.T):
-            x = x_trj[t][None,:]
-            u = u_trj[t][None,:]
-            xnext = x_trj[t+1][None,:]
-            z = self.sf.get_z_from_xux(x, u, xnext)
-            z_score = self.sf.get_score_z_given_z(z)
-            x_score, u_score, xnext_score = self.sf.get_xux_from_z(z_score)
-            x_score = x_score.squeeze(0)
-            u_score = u_score.squeeze(0)
-            xnext_score = xnext_score.squeeze(0)
-            
-            weight = -1 / self.params.sf.sigma ** 2
-            
-            if t == 0:
-                self.trj.xnext_trj.grad[t] += weight * beta * xnext_score
-                self.trj.u_trj.grad[t] += weight * beta * u_score
-            elif t == self.params.T-1:
-                if isinstance(self.trj, BVPTrajectory):
-                    self.trj.xnext_trj.grad[t-1] += weight * beta * x_score
-                    self.trj.u_trj.grad[t] += weight * beta * u_score
-                else:
-                    self.trj.xnext_trj.grad[t-1] += weight * beta * x_score
-                    self.trj.xnext_trj.grad[t] += weight * beta * xnext_score
-                    self.trj.u_trj.grad[t] += weight * beta * u_score                
-            else: 
-                self.trj.xnext_trj.grad[t-1] += weight * x_score
-                self.trj.xnext_trj.grad[t] += weight * xnext_score
-                self.trj.u_trj.grad[t] += weight * u_score
-
+        
+        z_trj = torch.cat((x_trj[:-1], u_trj, x_trj[1:]), dim=1)
+        sz_trj = self.sf.get_score_z_given_z(z_trj)
+        sx_trj, su_trj, sxnext_trj = self.sf.get_xux_from_z(sz_trj)
+        
+        weight = -1 / self.params.sf.sigma ** 2
+        
+        if isinstance(self.trj, BVPTrajectory):
+            self.trj.xnext_trj.grad += weight * beta * sx_trj[1:]
+            self.trj.xnext_trj.grad += weight * beta * sxnext_trj[:-1]
+            self.trj.u_trj.grad += weight * beta * su_trj
+        else:
+            self.trj.xnext_trj.grad[:-1] += weight * beta * sx_trj[1:]
+            self.trj.xnext_trj.grad += weight * beta * sxnext_trj
+            self.trj.u_trj.grad += weight * beta * su_trj            
             
     def initialize(self):
         xnext_trj_init = tensor_linspace(

@@ -14,7 +14,7 @@ class Trajectory(torch.nn.Module):
         """
         Trajectory class for decision making.
         This class is for IVPs (Initial Value Problems),
-        and has x0 has a fixed buffer, while 
+        and has x0 as a fixed buffer, while 
         x_trj[1] to x_trj[T], u_trj[0] to u_trj[T-1] are decision variables.
         """
         super().__init__()
@@ -41,7 +41,7 @@ class Trajectory(torch.nn.Module):
             return self.x0, self.u_trj[t]
         # If t = T, return xT.
         elif (t == self.T):
-            return self.xnext_trj[self.T-1]
+            return self.xnext_trj[self.T-1], None
         # Otherwise, return (xt, ut)
         else:
             return self.xnext_trj[t-1], self.u_trj[t]
@@ -81,7 +81,7 @@ class BVPTrajectory(Trajectory):
             return self.x0, self.u_trj[t]
         # If t = T, return xT.
         elif (t == self.T):
-            return self.xT
+            return self.xT, None
         # Otherwise, return (xt, ut)
         else:
             return self.xnext_trj[t-1], self.u_trj[t]
