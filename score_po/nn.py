@@ -271,9 +271,6 @@ def train_network(
             entity=params.wandb_params.entity,
         )
 
-    if augment_data is None:
-        augment_data = lambda x: x
-
     net.train()
 
     optimizer = optim.Adam(net.parameters(), params.adam_params.lr)
