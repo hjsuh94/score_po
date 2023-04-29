@@ -1,5 +1,6 @@
 defaults:
   - user: hongkai
+  - plant_param: param1
 
 hydra:
   run:
@@ -7,10 +8,6 @@ hydra:
 
 device: "cuda"
 seed: 123
-nn_plant:
-  dt: 0.05
-  hidden_layers: [64, 64, 32]
-  u_max: 80
 
 dataset:
   load_path: ${user.dataset_load_path}
