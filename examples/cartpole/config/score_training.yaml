@@ -1,5 +1,6 @@
 defaults:
   - user: hongkai
+  - plant_param: param1
 
 hydra:
   run:

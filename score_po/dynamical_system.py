@@ -57,7 +57,7 @@ class NNDynamicalSystem(DynamicalSystem):
     Neural network dynamical system, where the network is of
     - input shape (n + m)
     - output shape (n)
-    We train the network to predict the residual dynamics in the 
+    We train the network to predict the residual dynamics in the
     normalized space, such that net(xnow, u) = xnext - xnow
     """
 
@@ -103,7 +103,7 @@ class NNDynamicalSystem(DynamicalSystem):
         u_normalized = self.u_normalizer(u_batch)
         normalized_input = torch.hstack((x_normalized, u_normalized))
         normalized_output = self.net(normalized_input)
-        # we don't use self.x_normalizer.denormalize since in the 
+        # we don't use self.x_normalizer.denormalize since in the
         # residual dynamics, the bias terms cancel out.
         return self.x_normalizer.k * normalized_output + x_batch
 
@@ -167,3 +167,55 @@ def midpoint_integration(
     xdot_mid = dyn_fun(x_mid, u)
     x_next = x + xdot_mid * dt
     return x_next
+
+
+def sim_openloop_batch(
+    dynamical_system: DynamicalSystem,
+    x0_batch: torch.Tensor,
+    u_trj_batch: torch.Tensor,
+    noise_trj_batch: Optional[torch.Tensor],
+) -> torch.Tensor:
+    """
+    Simulate the system with a batch open loop u trajectories.
+
+    Args:
+      u_trj: Size (batch_size, T, dim_u)
+      x0_batch: Size (batch_size, dim_x)
+      noise_trj: Size (batch_size, T, dim_x)
+    Returns:
+      x_trj_batch: Size (batch_size, T+1, dim_x)
+    """
+    batch_size = x0_batch.shape[0]
+    T = u_trj_batch.shape[1]
+    assert x0_batch.shape[1] == dynamical_system.dim_x
+    assert u_trj_batch.shape[0] == batch_size
+    assert u_trj_batch.shape[2] == dynamical_system.dim_u
+    if noise_trj_batch is not None:
+        assert noise_trj_batch.shape == (batch_size, T, dynamical_system.dim_x)
+    x_trj_batch = torch.zeros(
+        (batch_size, T + 1, dynamical_system.dim_x), device=x0_batch.device
+    )
+    x_trj_batch[:, 0, :] = x0_batch
+    for i in range(T):
+        x_trj_batch[:, i + 1, :] = dynamical_system.dynamics_batch(
+            x_trj_batch[:, i, :], u_trj_batch[:, i, :]
+        )
+        if noise_trj_batch is not None:
+            x_trj_batch[:, i + 1, :] = (
+                x_trj_batch[:, i + 1, :] + noise_trj_batch[:, i, :]
+            )
+    return x_trj_batch
+
+
+def sim_openloop(
+    dynamical_system: DynamicalSystem,
+    x0: torch.Tensor,
+    u_trj: torch.Tensor,
+    noise_trj: Optional[torch.Tensor],
+) -> torch.Tensor:
+    return sim_openloop_batch(
+        dynamical_system,
+        x0.unsqueeze(0),
+        u_trj.unsqueeze(0),
+        None if noise_trj is None else noise_trj.unsqueeze(0),
+    ).squeeze(0)

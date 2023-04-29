@@ -16,22 +16,14 @@ class TestGenerateData:
         dt = 0.01
         plant = CartpolePlant(dt)
 
-        left_wall = -3.0
-        right_wall = 4.0
-        cart_length = 0.2
-        theta_range = [-2, 2]
-        cart_vel_range = [-3, 4]
-        thetadot_range = [-5, 5]
+        x_lo = torch.tensor([-3, -2, -5, -4.], device=device)
+        x_up = torch.tensor([3, 5, 1, 4.], device=device)
         u_max = 10
         sample_size = 100
         dataset = mut.generate_data(
-            cart_length,
-            left_wall,
-            right_wall,
-            theta_range,
-            cart_vel_range,
-            thetadot_range,
             dt,
+            x_lo,
+            x_up,
             u_max,
             sample_size,
             device,
@@ -40,20 +32,17 @@ class TestGenerateData:
 
         loader = torch.utils.data.DataLoader(dataset)
 
-        def check_within_all(x):
-            assert torch.all(x[:, 0] >= left_wall + cart_length / 2)
-            assert torch.all(x[:, 0] <= right_wall - cart_length / 2)
-            pole_pos_x = x[:, 0] + plant.l2 * torch.sin(x[:, 1])
-            assert torch.all(pole_pos_x <= right_wall)
-            assert torch.all(pole_pos_x >= left_wall)
+        def check_within_wall(x):
+            assert torch.all(x >= x_lo)
+            assert torch.all(x <= x_up)
 
         # Check that the states are within the
         for batch in loader:
             x_samples, u_samples, xnext_samples = batch
             assert torch.all(u_samples <= u_max)
             assert torch.all(u_samples >= -u_max)
-            check_within_all(x_samples)
-            check_within_all(xnext_samples)
+            check_within_wall(x_samples)
+            check_within_wall(xnext_samples)
             # Now simulate the dynamics with scipy for dt
             for i in range(x_samples.shape[0]):
 
