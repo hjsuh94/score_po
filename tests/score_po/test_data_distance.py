@@ -70,18 +70,14 @@ class TestDataDistance:
             for j, data_pt in enumerate(data):
                 quadratic[i, j] = 0.5 * torch.linalg.norm((x - data_pt) / sigma) ** 2
         softmin = -torch.logsumexp(-quadratic, 1).cpu().numpy()
-        truemin, _ = torch.min(quadratic, 1)
-        truemin = truemin.cpu().numpy()
 
         # Compute minimum by mut.
         dataset = TensorDataset(data)
         metric = torch.ones(3) / (sigma**2.0)
         dst = mut.DataDistance(dataset, metric)
         softmin_mut = dst.get_energy_to_data(x_batch).cpu().numpy()
-        truemin_mut = dst.get_energy_to_data(x_batch, mode="min").cpu().numpy()
 
         np.testing.assert_allclose(softmin, softmin_mut, rtol=1e-3)
-        np.testing.assert_allclose(truemin, truemin_mut, rtol=1e-3)
 
     @pytest.mark.parametrize("device", ("cpu", "cuda"))
     def test_multidimensional_energy_to_data(self, device):
@@ -97,18 +93,13 @@ class TestDataDistance:
                     0.5 * torch.linalg.norm((data[d] - x_batch[b]) / sigma) ** 2
                 )
         softmin = -torch.logsumexp(-quadratic, 1).cpu().numpy()
-        truemin, _ = torch.min(quadratic, 1)
-        truemin = truemin.cpu().numpy()
 
         # Compute minimum by mut.
         dataset = TensorDataset(data)
         metric = torch.ones(3, 2, 5) / (sigma**2.0)
         dst = mut.DataDistance(dataset, metric)
         softmin_mut = dst.get_energy_to_data(x_batch).cpu().numpy()
-        truemin_mut = dst.get_energy_to_data(x_batch, mode="min").cpu().numpy()
-
         np.testing.assert_allclose(softmin, softmin_mut, rtol=1e-3)
-        np.testing.assert_allclose(truemin, truemin_mut, rtol=1e-3)
 
     @pytest.mark.parametrize("device", ("cpu", "cuda"))
     def test_energy_gradients(self, device):
@@ -137,47 +128,44 @@ class TestDataDistance:
         np.testing.assert_equal(grads.shape, torch.Size([3, 3, 2, 5]))
 
 
-class TestDataDistanceEstimator:
+class TestDataDistanceEstimatoXu:
     def initialize_dde(self):
         network = MLP(5, 1, [128, 128])
-        metric = torch.ones(5)
         domain_lb = -torch.ones(5)
         domain_ub = torch.ones(5)
-        dde = mut.DataDistanceEstimator(5, network, metric, domain_lb, domain_ub)
+        dde = mut.DataDistanceEstimatorXu(
+            3, 2, network, domain_lb, domain_ub)
         return dde
 
     def test_constructor(self):
         network = MLP(5, 1, [128, 128])
-        metric = torch.ones(5)
         domain_lb = -torch.ones(5)
         domain_ub = torch.ones(5)
 
         with np.testing.assert_raises(ValueError):
-            mut.DataDistanceEstimator(2, network, metric, domain_lb, domain_ub)
+            mut.DataDistanceEstimatorXu(3, 1, network, domain_lb, domain_ub)
 
         # Doesn't throw since input is 5.
-        dde = mut.DataDistanceEstimator(5, network, metric, domain_lb, domain_ub)
-        assert ("metric" in dde.state_dict())
+        dde = mut.DataDistanceEstimatorXu(3, 2, network, domain_lb, domain_ub)
         assert ("domain_lb" in dde.state_dict())
         assert ("domain_ub" in dde.state_dict())
 
     @pytest.mark.parametrize("device", ("cpu", "cuda"))
     def test_distance_eval(self, device: Literal["cpu", "cuda"]):
         x_tensor = torch.rand(100, 5).to(device)
-        dde = self.initialize_dde()
+        dde = self.initialize_dde().to(device)
         distance = dde.get_energy_to_data(x_tensor)
         np.testing.assert_equal(distance.shape, torch.Size([100, 1]))
 
     @pytest.mark.parametrize("device", ("cpu", "cuda"))
     def test_gradients_eval(self, device: Literal["cpu", "cuda"]):
         x_tensor = torch.rand(100, 5).to(device)
-        dde = self.initialize_dde()
+        dde = self.initialize_dde().to(device)
         gradients = dde.get_energy_gradients(x_tensor)
         np.testing.assert_equal(gradients.shape, torch.Size([100, 5]))
 
     @pytest.mark.parametrize("device", ("cpu", "cuda"))
-    @pytest.mark.parametrize("mode", ("softmin", "min"))
-    def test_train(self, device, mode):
+    def test_train(self, device):
         dde = self.initialize_dde()
 
         params = TrainParams()
@@ -185,10 +173,61 @@ class TestDataDistanceEstimator:
             cfg = compose(config_name="train_params")
             params.load_from_config(cfg)
 
-        data_tensor = torch.rand(100, 1)
-        dataset = torch.utils.data.TensorDataset(data_tensor)
-        dde.train_network(dataset, params, mode)
+        dataset = torch.utils.data.TensorDataset(
+            torch.rand(100,3), torch.rand(100,2), 
+            torch.rand(100,3))            
+        metric = torch.rand(5)
+        dde.train_network(dataset, params, metric)
+        assert ("metric" in dde.state_dict())
 
+class TestDataDistanceEstimatoXux:
+    def initialize_dde(self):
+        network = MLP(8, 1, [128, 128])
+        domain_lb = -torch.ones(8)
+        domain_ub = torch.ones(8)
+        dde = mut.DataDistanceEstimatorXux(
+            3, 2, network, domain_lb, domain_ub)
+        return dde
 
-a = TestDataDistance()
-a.test_pairwise_energy("cpu")
+    def test_constructor(self):
+        network = MLP(8, 1, [128, 128])
+        domain_lb = -torch.ones(8)
+        domain_ub = torch.ones(8)
+
+        with np.testing.assert_raises(ValueError):
+            mut.DataDistanceEstimatorXux(2, 2, network, domain_lb, domain_ub)
+
+        # Doesn't throw since input is 3 + 2 + 3 = 8.
+        dde = mut.DataDistanceEstimatorXux(3, 2, network, domain_lb, domain_ub)
+        assert ("domain_lb" in dde.state_dict())
+        assert ("domain_ub" in dde.state_dict())
+
+    @pytest.mark.parametrize("device", ("cpu", "cuda"))
+    def test_distance_eval(self, device: Literal["cpu", "cuda"]):
+        x_tensor = torch.rand(100, 8).to(device)
+        dde = self.initialize_dde().to(device)
+        distance = dde.get_energy_to_data(x_tensor)
+        np.testing.assert_equal(distance.shape, torch.Size([100, 1]))
+
+    @pytest.mark.parametrize("device", ("cpu", "cuda"))
+    def test_gradients_eval(self, device: Literal["cpu", "cuda"]):
+        x_tensor = torch.rand(100, 8).to(device)
+        dde = self.initialize_dde().to(device)
+        gradients = dde.get_energy_gradients(x_tensor)
+        np.testing.assert_equal(gradients.shape, torch.Size([100, 8]))
+
+    @pytest.mark.parametrize("device", ("cpu", "cuda"))
+    def test_train(self, device):
+        dde = self.initialize_dde()
+
+        params = TrainParams()
+        with initialize(config_path="./config"):
+            cfg = compose(config_name="train_params")
+            params.load_from_config(cfg)
+
+        dataset = torch.utils.data.TensorDataset(
+            torch.rand(100,3), torch.rand(100,2), 
+            torch.rand(100,3))
+        metric = torch.rand(8)
+        dde.train_network(dataset, params, metric)
+        assert ("metric" in dde.state_dict())

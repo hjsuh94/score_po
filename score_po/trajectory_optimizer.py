@@ -8,7 +8,8 @@ import torch
 import matplotlib.pyplot as plt
 import wandb
 
-from score_po.score_matching import ScoreEstimatorXux
+from score_po.score_matching import ScoreEstimatorXux, ScoreEstimatorXu
+from score_po.data_distance import DataDistanceEstimatorXux
 from score_po.costs import Cost
 from score_po.trajectory import Trajectory, BVPTrajectory
 from score_po.nn import WandbParams, save_module, tensor_linspace
@@ -195,3 +196,30 @@ class TrajectoryOptimizerSF(TrajectoryOptimizer):
             self.trj.xnext_trj.grad[:-1] += weight * sx_trj[1:]
             self.trj.xnext_trj.grad += weight * sxnext_trj
             self.trj.u_trj.grad += weight * su_trj
+
+
+@dataclass
+class TrajectoryOptimizerDDEParams(TrajectoryOptimizerParams):
+    beta: float = 1.0
+    dde: DataDistanceEstimatorXux = None
+    
+    def __init__(self):
+        super().__init__()
+
+    def load_from_config(self, cfg: DictConfig):
+        super().load_from_config(cfg)
+        self.beta = cfg.trj.beta
+
+    def to_device(self, device):
+        super().to_device(device)
+        self.dde.to(device)
+        
+class TrajectoryOptimizerDDE(TrajectoryOptimizer):
+    def __init__(self, params: TrajectoryOptimizerDDEParams, **kwargs):
+        super().__init__(params)
+        self.dde = params.dde
+        
+    def get_penalty_loss(self):
+        x_trj, u_trj = self.trj.get_full_trajectory()
+        z_trj = torch.cat((x_trj[:-1], u_trj, x_trj[1:]), dim=1)
+        return self.params.beta * self.dde.get_energy_to_data(z_trj).sum()

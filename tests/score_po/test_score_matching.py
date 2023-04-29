@@ -94,8 +94,8 @@ class TestScoreEstimatorXu:
         x_tensor = torch.rand(100, 3)
         u_tensor = torch.rand(100, 2)
         dataset = torch.utils.data.TensorDataset(x_tensor, u_tensor)
-        sf.train_network(dataset, params, 0.1, split=False)
-        sf.train_network(dataset, params, 0.3, split=True)
+        sf.train_network(dataset, params, 0.1 * torch.ones(1), split=False)
+        sf.train_network(dataset, params, 0.3 * torch.ones(1), split=True)
 
 
 class TestScoreEstimatorXux:
@@ -189,8 +189,8 @@ class TestScoreEstimatorXux:
         u_tensor = torch.rand(100, 2)
         xnext_tensor = torch.rand(100, 3)
         dataset = torch.utils.data.TensorDataset(x_tensor, u_tensor, xnext_tensor)
-        sf.train_network(dataset, params, 0.1, split=False)
-        sf.train_network(dataset, params, 0.3, split=True)
+        sf.train_network(dataset, params, 0.1 * torch.ones(1), split=False)
+        sf.train_network(dataset, params, 0.3 * torch.ones(1), split=True)
 
 
 class GaussianScore(torch.nn.Module):

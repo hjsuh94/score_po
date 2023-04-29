@@ -74,7 +74,7 @@ def main(cfg: DictConfig):
             plt.close()
         
     # 5. Run 
-    optimizer = TrajectoryOptimizer(params)
+    optimizer = TrajectoryOptimizerSF(params)
     optimizer.iterate(callback)
 
 

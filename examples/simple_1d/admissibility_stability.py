@@ -17,7 +17,7 @@ from torch.utils.data import TensorDataset
 from tqdm import tqdm
 
 from score_po.nn import MLP, EnsembleNetwork, TrainParams, train_network
-from score_po.data_distance import DataDistance, DataDistanceEstimator
+from score_po.data_distance import DataDistance
 
 target_fun = lambda x: x**2.0 * np.sin(x)
 
