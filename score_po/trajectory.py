@@ -11,13 +11,7 @@ import torch.nn as nn
 
 class Trajectory(torch.nn.Module):
     def __init__(self, dim_x, dim_u, T, x0):
-        """
-        Trajectory class for decision making.
-        This class is for IVPs (Initial Value Problems),
-        and has x0 as a fixed buffer, while 
-        x_trj[1] to x_trj[T], u_trj[0] to u_trj[T-1] are decision variables.
-        """
-        super().__init__()
+        super().__init__()    
         self.dim_x = dim_x
         self.dim_u = dim_u
         self.T = T
@@ -25,10 +19,23 @@ class Trajectory(torch.nn.Module):
         self.declare_parameters()
         
     def declare_parameters(self):
+        self.u_trj = nn.Parameter(torch.zeros((self.T, self.dim_u)))
+
+
+class IVPTrajectory(Trajectory):
+    def __init__(self, dim_x, dim_u, T, x0):
+        """
+        This class is for IVPs (Initial Value Problems),
+        and has x0 as a fixed buffer, while 
+        x_trj[1] to x_trj[T], u_trj[0] to u_trj[T-1] are decision variables.
+        """
+        super().__init__()
+        
+    def declare_parameters(self):
         # x_trj: x_trj[1] to x_trj[T]
         # u_trj: u_trj[0] to u_trj[T-1]
+        super().declare_parameters()
         self.xnext_trj = nn.Parameter(torch.zeros((self.T, self.dim_x)))
-        self.u_trj = nn.Parameter(torch.zeros((self.T, self.dim_u)))
         
     def get_full_trajectory(self):
         x_trj = torch.cat((self.x0, self.xnext_trj), dim=0)
@@ -56,18 +63,13 @@ class BVPTrajectory(Trajectory):
         x_trj[1] to x_trj[T-1], u_trj[0] to u_trj[T-1] are decision variables.
         """        
         super().__init__(dim_x, dim_u, T, x0)
-        self.dim_x = dim_x
-        self.dim_u = dim_u
-        self.T = T
-        self.register_buffer("x0", x0)
         self.register_buffer("xT", xT)
-        self.declare_parameters()        
         
     def declare_parameters(self):
         # x_trj: x_trj[1] to x_trj[T-1]
         # u_trj: u_trj[0] to u_trj[T-1]
+        super().declare_parameters()
         self.xnext_trj = nn.Parameter(torch.zeros((self.T-1, self.dim_x)))
-        self.u_trj = nn.Parameter(torch.zeros((self.T, self.dim_u)))
         
     def get_full_trajectory(self):
         x_trj = torch.cat(
@@ -85,3 +87,14 @@ class BVPTrajectory(Trajectory):
         # Otherwise, return (xt, ut)
         else:
             return self.xnext_trj[t-1], self.u_trj[t]
+
+
+class SSTrajectory(Trajectory):
+    def __init__(self, dim_x, dim_u, T, x0):
+        """
+        Trajectory class for single shooting.
+        """
+        super().__init__(dim_x, dim_u, T, x0)
+        
+    def forward(self, t):
+        return None, self.u_trj[t]
