@@ -86,6 +86,8 @@ class DataDistanceEstimatorXu(torch.nn.Module):
         self.net = network
         self.register_buffer("domain_lb", domain_lb)
         self.register_buffer("domain_ub", domain_ub)
+        self.register_buffer("metric",
+                             torch.Tensor(self.dim_x + self.dim_u))
         self.check_input_consistency()
 
     def check_input_consistency(self):
@@ -115,7 +117,7 @@ class DataDistanceEstimatorXu(torch.nn.Module):
 
     def get_energy_gradients(self, z_batch):
         """
-        Given x, compute distance to data.
+        Given z, compute distance to data.
         """
         z_batch = z_batch.clone()
         z_batch.requires_grad = True
@@ -139,18 +141,19 @@ class DataDistanceEstimatorXu(torch.nn.Module):
         dataset: TensorDataset,
         params: TrainParams,
         metric: torch.Tensor,
+        callback = None
     ):
         """
         Train a network given a dataset and optimization parameters.
-        """                
+        """         
         # Retain memory of the metric.
-        self.register_buffer("metric", metric)
+        self.metric = metric        
         cat_dataset = TensorDataset(torch.cat(dataset.tensors[0:2], dim=1))
         dst = DataDistance(cat_dataset, self.metric)
         loss_fn = lambda z_batch, net: self.evaluate_loss(
             z_batch, dst)
         loss_lst = train_network_sampling(
-            self, params, self.sample_from_domain, loss_fn)
+            self, params, self.sample_from_domain, loss_fn, callback)
         return loss_lst
 
 
@@ -162,6 +165,8 @@ class DataDistanceEstimatorXux(torch.nn.Module):
         self.net = network
         self.register_buffer("domain_lb", domain_lb)
         self.register_buffer("domain_ub", domain_ub)
+        self.register_buffer("metric",
+                             torch.Tensor(self.dim_x + self.dim_u + self.dim_x))
         self.check_input_consistency()
 
     def check_input_consistency(self):
@@ -216,17 +221,18 @@ class DataDistanceEstimatorXux(torch.nn.Module):
         dataset: TensorDataset,
         params: TrainParams,
         metric: torch.Tensor,
+        callback = None
     ):
         """
         Train a network given a dataset and optimization parameters.
         """
         # Retain memory of the metric.
-        self.register_buffer("metric", metric)
+        self.metric = metric
         # assume dataset is x_batch, u_batch, xnext_batch
         cat_dataset = TensorDataset(torch.cat(dataset.tensors, dim=1))
         dst = DataDistance(cat_dataset, self.metric)
         loss_fn = lambda z_batch, net: self.evaluate_loss(
             z_batch, dst)
         loss_lst = train_network_sampling(
-            self, params, self.sample_from_domain, loss_fn)
+            self, params, self.sample_from_domain, loss_fn, callback)
         return loss_lst        

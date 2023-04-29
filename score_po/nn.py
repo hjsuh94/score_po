@@ -250,6 +250,7 @@ def train_network(
     dataset: TensorDataset,
     loss_fn,
     split=True,
+    callback=None
 ):
     """
     Common utility function to train a neural network.
@@ -257,6 +258,7 @@ def train_network(
     params: TrainParams
     loss_fn: a loss function for the optimization problem.
     loss_fn should have signature loss_fn(x_batch, net)
+    callback: should have signature callback(net, loss, epoch)
     """
     if params.wandb_params.enabled:
         if params.wandb_params.dir is not None and not os.path.exists(
@@ -308,7 +310,10 @@ def train_network(
             scheduler.step()
             training_loss += loss.item() * z_batch[0].shape[0]
         training_loss /= len(train_dataset)
-
+        
+        if callback is not None:
+            callback(net, loss.item(), epoch)
+            
         with torch.no_grad():
             for z_all in data_loader_eval:
                 z_all = tuple_to_device(z_all, params.device)
@@ -330,11 +335,13 @@ def train_network(
 
 
 def train_network_sampling(
-    net: nn.Module, params: TrainParams, sample_fn, loss_fn):
+    net: nn.Module, params: TrainParams, sample_fn, loss_fn,
+    callback):
     """
     A variant of train_network that does not use a dataset but a random sampling
     function. The sampling function should have the signature
     sample_fn(batch_size) and return (batch_size, dim_data).
+    callback: should have signature callback(net, loss, epoch)
     """
     if params.wandb_params.enabled:
         if params.wandb_params.dir is not None and not os.path.exists(
@@ -365,6 +372,9 @@ def train_network_sampling(
         loss.backward()
         optimizer.step()
         scheduler.step()
+        
+        if callback is not None:
+            callback(net, loss.item(), epoch)        
 
         loss_eval = loss.clone().detach()
         loss_lst[epoch] = loss_eval.item()

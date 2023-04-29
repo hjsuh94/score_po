@@ -71,6 +71,7 @@ class ScoreEstimatorXu(torch.nn.Module):
             if u_normalizer is None
             else u_normalizer
         )
+        self.register_buffer("sigma", torch.ones(1))        
         self.check_input_consistency()
 
     def check_input_consistency(self):
@@ -153,14 +154,14 @@ class ScoreEstimatorXu(torch.nn.Module):
         self,
         dataset: TensorDataset,
         params: TrainParams,
-        sigma,
+        sigma: torch.Tensor,
         split=True,
     ):
         """
         Train a network given a dataset and optimization parameters.
         """
         # Retain memory of the noise level.
-        self.register_buffer("sigma", sigma) # retain memory of noise level.        
+        self.sigma = sigma
         # We assume z_batch is (x_batch, u_batch)        
         loss_fn = lambda z_batch, net: self.evaluate_loss(
             z_batch[0], z_batch[1], self.sigma)
@@ -208,6 +209,7 @@ class ScoreEstimatorXux(torch.nn.Module):
             if u_normalizer is None
             else u_normalizer
         )
+        self.register_buffer("sigma", torch.ones(1))
         self.check_input_consistency()
 
     def check_input_consistency(self):
@@ -302,7 +304,7 @@ class ScoreEstimatorXux(torch.nn.Module):
         """
         Train a network given a dataset and optimization parameters.
         """
-        self.register_buffer("sigma", sigma) # retain memory of noise level.
+        self.sigma = sigma
         # We assume z_batch is (x_batch, u_batch, xnext_batch)
         loss_fn = lambda z_batch, net: self.evaluate_loss(
             z_batch[0], z_batch[1], z_batch[2], self.sigma)
