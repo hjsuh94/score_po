@@ -3,7 +3,7 @@ from typing import List, Optional
 import numpy as np
 import torch
 
-from score_po.dynamical_system import DynamicalSystem, NNDynamicalSystem
+from score_po.dynamical_system import DynamicalSystem, NNDynamicalSystem, midpoint_integration
 import score_po.nn
 
 
@@ -29,13 +29,7 @@ class CartpolePlant(DynamicalSystem):
         return self.dynamics_batch(x.reshape((1, -1)), u.reshape((1, -1))).squeeze(0)
 
     def dynamics_batch(self, x_batch, u_batch):
-        # Assume mid-point integration
-        xdot = self.calc_derivative(x_batch, u_batch)
-        x_mid = x_batch + xdot * self.dt / 2
-        # Assume constant action u within the step.
-        xdot_mid = self.calc_derivative(x_mid, u_batch)
-        xnext = x_batch + xdot_mid * self.dt
-        return xnext
+        return midpoint_integration(self.calc_derivative, x_batch, u_batch, self.dt)
 
     def calc_derivative(self, x_batch, u_batch):
         """
@@ -117,26 +111,3 @@ class CartpoleNNDynamicalSystem(NNDynamicalSystem):
             x_normalizer=x_normalizer,
             u_normalizer=u_normalizer,
         )
-
-    def dynamics(self, x: torch.Tensor, u: torch.Tensor, eval: bool = True):
-        return self.dynamics_batch(
-            x.unsqueeze(0).to(self.device), u.unsqueeze(0).to(self.device), eval
-        ).squeeze(0)
-
-    def dynamics_batch(
-        self, x_batch: torch.Tensor, u_batch: torch.Tensor, eval: bool = True
-    ):
-        if eval:
-            self.net.eval()
-        else:
-            self.net.train()
-
-        # We first normalize x and u.
-        x_normalized = self.x_normalizer(x_batch)
-        u_normalized = self.u_normalizer(u_batch)
-
-        xu_batch = torch.concat((x_normalized, u_normalized), dim=1)
-
-        # The network only predicts the residual dynamics
-        delta_x_batch = self.net(xu_batch)
-        return x_batch + self.x_normalizer.denormalize(delta_x_batch)

@@ -6,7 +6,7 @@ from omegaconf import DictConfig, OmegaConf
 import torch
 import wandb
 
-from score_po.score_matching import ScoreEstimator 
+from score_po.score_matching import ScoreEstimatorXu
 from score_po.nn import MLP, TrainParams, save_module, Normalizer
 
 
@@ -29,18 +29,18 @@ def main(cfg: DictConfig):
     params = TrainParams()
     params.load_from_config(cfg)
 
-    # This dataset stores x and u separately. ScoreEstimator needs z = (x, u) so we process the dataset here.
-    x_data = dataset.tensors[0]
-    u_data = dataset.tensors[1]
-    z_data = torch.cat((x_data, u_data), dim=-1)
-    z_dataset = torch.utils.data.TensorDataset(z_data)
-
-    z_normalizer = Normalizer(k=torch.Tensor([2, np.pi, 3, 12, 80]), b=torch.zeros(5))
-    score_estimator = ScoreEstimator(
-        dim_x=4, dim_u=1, network=network, z_normalizer=z_normalizer
+    x_normalizer = Normalizer(k=torch.tensor([2, np.pi, 3, 12]), b=torch.zeros(4))
+    u_normalizer = Normalizer(k=torch.tensor([80]), b=torch.tensor(0))
+    score_estimator = ScoreEstimatorXu(
+        dim_x=4,
+        dim_u=1,
+        network=network,
+        x_normalizer=x_normalizer,
+        u_normalizer=u_normalizer,
     )
+    # TODO(hongkai.dai): do a sweep on sigma (try sigma = 0.1)
     loss_lst = score_estimator.train_network(
-        z_dataset, params, sigma=0.01, mode="denoising", split=True
+        dataset, params, sigma=0.01, split=True
     )
 
 
