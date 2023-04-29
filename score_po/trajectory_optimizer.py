@@ -8,10 +8,12 @@ import torch
 import matplotlib.pyplot as plt
 import wandb
 
+from score_po.dynamical_system import DynamicalSystem
 from score_po.score_matching import ScoreEstimatorXux, ScoreEstimatorXu
 from score_po.data_distance import DataDistanceEstimatorXux
 from score_po.costs import Cost
-from score_po.trajectory import Trajectory, BVPTrajectory
+from score_po.trajectory import (
+    Trajectory, IVPTrajectory, BVPTrajectory, SSTrajectory)
 from score_po.nn import WandbParams, save_module, tensor_linspace
 
 
@@ -82,8 +84,8 @@ class TrajectoryOptimizer:
 
     def iterate(self, callback=None):
         """
-        Callback is a function that can be called with weightature 
-        f(params, loss, iter)
+        Callback is a function that can be called with signature 
+        f(self, loss, iter)
         """
         if self.params.wandb_params.enabled:
             if self.params.wandb_params.dir is not None and not os.path.exists(
@@ -117,7 +119,7 @@ class TrajectoryOptimizer:
         
         for iter in range(self.params.max_iters - 1):
             if callback is not None:
-                callback(self.params, loss.item(), iter)
+                callback(self, loss.item(), iter)
             
             optimizer.zero_grad()
             loss = self.get_value_loss() + self.get_penalty_loss()
@@ -154,6 +156,7 @@ class TrajectoryOptimizer:
         plt.close()
        
 
+""" TrajectoryOptimizer with First Order + Dircol + SF"""
 @dataclass
 class TrajectoryOptimizerSFParams(TrajectoryOptimizerParams):
     beta: float = 1.0
@@ -175,6 +178,7 @@ class TrajectoryOptimizerSF(TrajectoryOptimizer):
     def __init__(self, params: TrajectoryOptimizerSFParams, **kwargs):
         super().__init__(params)
         self.sf = params.sf
+        assert isinstance(self.sf, ScoreEstimatorXux)
         
     def modify_gradients(self):
         # Modify value loss by applying score function.
@@ -192,12 +196,15 @@ class TrajectoryOptimizerSF(TrajectoryOptimizer):
             self.trj.xnext_trj.grad += weight * sx_trj[1:]
             self.trj.xnext_trj.grad += weight * sxnext_trj[:-1]
             self.trj.u_trj.grad += weight * su_trj
-        else:
+        elif isinstance(self.trj, IVPTrajectory):
             self.trj.xnext_trj.grad[:-1] += weight * sx_trj[1:]
             self.trj.xnext_trj.grad += weight * sxnext_trj
             self.trj.u_trj.grad += weight * su_trj
+        else:
+            raise ValueError("Must be BVPTrajectory or IVPTrajectory")
 
 
+""" TrajectoryOptimizer with First Order + Dircol + DDE"""
 @dataclass
 class TrajectoryOptimizerDDEParams(TrajectoryOptimizerParams):
     beta: float = 1.0
@@ -213,13 +220,97 @@ class TrajectoryOptimizerDDEParams(TrajectoryOptimizerParams):
     def to_device(self, device):
         super().to_device(device)
         self.dde.to(device)
+
         
 class TrajectoryOptimizerDDE(TrajectoryOptimizer):
     def __init__(self, params: TrajectoryOptimizerDDEParams, **kwargs):
         super().__init__(params)
         self.dde = params.dde
-        
+        assert isinstance(self.dde, DataDistanceEstimatorXux)
+                
     def get_penalty_loss(self):
         x_trj, u_trj = self.trj.get_full_trajectory()
         z_trj = torch.cat((x_trj[:-1], u_trj, x_trj[1:]), dim=1)
         return self.params.beta * self.dde.get_energy_to_data(z_trj).sum()
+
+
+""" TrajectoryOptimizer with First Order + SS + SF"""
+@dataclass
+class TrajectoryOptimizerSSParams(TrajectoryOptimizerParams):
+    beta: float = 1.0
+    sf: ScoreEstimatorXu = None
+    ds: DynamicalSystem = None
+    
+    def __init__(self):
+        super().__init__()
+
+    def load_from_config(self, cfg: DictConfig):
+        super().load_from_config(cfg)
+        self.beta = cfg.trj.beta
+
+    def to_device(self, device):
+        super().to_device(device)
+        self.sf.to(device)
+        if isinstance(self.ds, torch.nn.Module):
+            self.ds.to(device)
+
+
+class TrajectoryOptimizerSS(TrajectoryOptimizer):
+    def __init__(self, params: TrajectoryOptimizerSSParams, **kwargs):
+        super().__init__(params)
+        self.sf = params.sf
+        self.ds = params.ds
+        assert isinstance(self.trj, SSTrajectory)
+        assert isinstance(self.sf, ScoreEstimatorXu)
+        
+    def initialize(self):
+        u_trj_init = torch.zeros(self.trj.u_trj.shape).to(self.params.device)
+        u_trj_init += torch.randn_like(u_trj_init) * 0.0
+        self.trj.u_trj = torch.nn.Parameter(u_trj_init)
+        
+    def rollout_trajectory(self):
+        """
+        Rollout policy in batch, given
+            x0_batch: initial condition of shape (B, dim_x)
+            noise_trj_batch: (B, T, dim_u) noise output on the output of trajectory.
+        """
+        x_trj = torch.zeros(
+            (self.trj.T + 1, self.ds.dim_x)).to(self.params.device)
+        x_trj[0] = self.trj.x0[None,:]
+        #x_trj = torch.hstack((x_trj, self.trj.x0[None, :]))
+
+        for t in range(self.params.T):
+            x_trj[t+1] = self.ds.dynamics(
+                x_trj[t], self.trj.u_trj[t]
+            )
+            #x_trj = torch.hstack((x_trj, x_next_batch[None, :]))
+
+        return x_trj, self.trj.u_trj
+        
+    def get_value_loss(self):
+        # Loop over trajectories to compute reward loss.
+        x_trj, u_trj = self.rollout_trajectory()
+        cost = self.cost.get_running_cost_batch(x_trj[:-1], u_trj[:]).sum()
+        cost += self.cost.get_terminal_cost(x_trj[-1])
+        return cost
+
+    def get_penalty_loss(self):
+        """
+        We compute a quantity such that when autodiffed w.r.t. θ, we
+        obtain the score w.r.t parameters, e.g. computes ∇_θ log p(z). Using the chain rule,
+        we break down the gradient into ∇_θ log p(z) = ∇_z log p(z) *  ∇_θ z.
+        Since we don't want to compute ∇_θ z manually, we calculate the quantity
+        (∇_z log p(z) * z) and and detach ∇_z log p(z) from the computation graph
+        so that ∇_θ(∇_z log p(z) * z) = ∇_z log p(z) * ∇_θ z.
+        """
+        x_trj, u_trj = self.rollout_trajectory()
+        z_trj = torch.cat((x_trj[:-1], u_trj), dim=1)
+        
+        sz_trj = self.sf.get_score_z_given_z(z_trj)
+
+        # Here, ∇_z log p(z) is detached from the computation graph so that we ignore
+        # terms related to ∂(∇_z log p(z))/∂θ.
+        sz_trj = sz_trj.clone().detach()
+
+        score = torch.einsum("ti,ti->t", z_trj, sz_trj).sum()
+        return -score    
