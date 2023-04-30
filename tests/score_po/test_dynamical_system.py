@@ -109,3 +109,20 @@ class TestNNDynamicalSystem:
         np.testing.assert_allclose(
             loss_unnormalized.cpu().detach(), loss_unnormalized_expected.cpu().detach()
         )
+
+
+@pytest.mark.parametrize("device", ("cpu", "cuda"))
+def test_sim_openloop_batch(device):
+    dim_x = 3
+    dim_u = 2
+    ds = mut.NNDynamicalSystem(dim_x, dim_u, network=MLP(5, 3, [5, 5])).to(device)
+    batch_size = 4
+    T = 5
+    x0_batch = torch.rand((batch_size, dim_x), device=device)
+    u_trj_batch = torch.rand((batch_size, T, dim_u), device=device)
+    for noise_trj_batch in (None, torch.rand((batch_size, T, dim_x), device=device)):
+        x_trj_batch = mut.sim_openloop_batch(ds, x0_batch, u_trj_batch, noise_trj_batch)
+        assert x_trj_batch.shape == (batch_size, T + 1, dim_x)
+        np.testing.assert_allclose(
+            x_trj_batch[:, 0, :].cpu().detach().numpy(), x0_batch.cpu().detach().numpy()
+        )
