@@ -247,7 +247,7 @@ class PolicyOptimizer:
             if self.params.wandb_params.dir is not None and not os.path.exists(
                 self.params.wandb_params.dir
             ):
-                self.os.makedirs(self.params.wandb_params.dir, exist_ok=True)
+                os.makedirs(self.params.wandb_params.dir, exist_ok=True)
             wandb.init(
                 project=self.params.wandb_params.project,
                 name=self.params.wandb_params.name,
