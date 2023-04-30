@@ -191,17 +191,7 @@ class NNEnsembleDynamicalSystem(DynamicalSystem):
         
         self.ds_lst = ds_lst
         self.check_input_consistency()        
-        base_model = copy.deepcopy(ds_lst[0])
-        base_model = base_model.to('meta')
-        
-        self.esb_params, self.esb_buffers = torch.func.stack_module_state(
-            ds_lst)
-        
-        def fmodel(params, buffers, x, u):
-            return torch.func.functional_call(base_model, (
-                params, buffers), (x, u))
-            
-        self.map = torch.vmap(fmodel)
+        self.define_vmap()
 
     def check_input_consistency(self):
         for i, ds in enumerate(self.ds_lst):
@@ -215,6 +205,18 @@ class NNEnsembleDynamicalSystem(DynamicalSystem):
         Get dynamics_batch for a single ensemble model.
         """
         return self.ds_lst[i].dynamics_batch(x_batch, u_batch)
+    
+    def define_vmap(self):
+        base_model = copy.deepcopy(self.ds_lst[0])
+        base_model = base_model.to('meta')
+        self.esb_params, self.esb_buffers = torch.func.stack_module_state(
+            self.ds_lst)
+        
+        def fmodel(params, buffers, x, u):
+            return torch.func.functional_call(base_model, (
+                params, buffers), (x, u))
+            
+        self.map = torch.vmap(fmodel)        
 
     def dynamics_batch(self, x_batch, u_batch):
         """
@@ -279,6 +281,12 @@ class NNEnsembleDynamicalSystem(DynamicalSystem):
     def load_ensemble(self, filename):
         for k, ds in enumerate(self.ds_lst):
             ds.load_state_dict(torch.load(filename + "_{:02d}".format(k)))
+            
+    def to(self, device):
+        for ds in self.ds_lst:
+            ds.to(device)
+        # Redefine vmap so that the vmap operates on the transferred device.
+        self.define_vmap()
 
 
 def midpoint_integration(

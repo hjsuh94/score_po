@@ -54,8 +54,7 @@ class TestCartpoleNNDynamicalSystem:
         assert dut.net.mlp[0].weight.data.device.type == device
 
     @pytest.mark.parametrize("device", ("cpu", "cuda"))
-    @pytest.mark.parametrize("eval", (False, True))
-    def test_dynamics_batch(self, device, eval):
+    def test_dynamics_batch(self, device):
         torch.manual_seed(123)
         hidden_layers = [8, 4]
         x_normalizer = Normalizer(
@@ -69,7 +68,7 @@ class TestCartpoleNNDynamicalSystem:
         batch_size = 20
         x_batch = torch.rand((batch_size, 4), device=device)
         u_batch = (torch.rand((batch_size, 1), device=device) - 0.5) * 80
-        xnext = dut.dynamics_batch(x_batch, u_batch, eval)
+        xnext = dut.dynamics_batch(x_batch, u_batch)
         assert xnext.shape == x_batch.shape
 
         x_normalized = x_normalizer(x_batch)

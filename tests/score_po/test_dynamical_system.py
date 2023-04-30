@@ -95,7 +95,7 @@ class TestNNDynamicalSystem:
             xu, x_next, sigma=0, normalize_loss=False
         )
         loss_unnormalized_expected = 0.5 * (
-            (dut(xu[:, :2], xu[:, 2:], eval=True) - x_next) ** 2
+            (dut(xu[:, :2], xu[:, 2:]) - x_next) ** 2
         ).sum(dim=-1).mean(dim=0)
         np.testing.assert_allclose(
             loss_unnormalized.cpu().detach(), loss_unnormalized_expected.cpu().detach()
@@ -105,7 +105,7 @@ class TestNNDynamicalSystem:
             xu, x_next, sigma=0, normalize_loss=True
         )
         loss_normalized_expected = 0.5 * (
-            (x_normalizer(dut(xu[:, :2], xu[:, 2:], eval=True)) - x_normalizer(x_next))
+            (x_normalizer(dut(xu[:, :2], xu[:, 2:])) - x_normalizer(x_next))
             ** 2
         ).sum(dim=-1).mean(dim=0)
         np.testing.assert_allclose(
@@ -114,9 +114,13 @@ class TestNNDynamicalSystem:
         
 class TestNNEnsembleDynamicalSystem:
     def initialize(self, device: Literal["cpu", "cuda"]):
-        network_lst = [MLP(4, 2, [128, 128, 128]).to(device) for _ in range(4)]
-        network = EnsembleNetwork(4, 2, network_lst)
-        ds = mut.NNEnsembleDynamicalSystem(dim_x=2, dim_u=2, network=network)
+        dynamics_lst = []
+        for i in range(4):
+            mlp = MLP(4, 2, [128, 128, 128]).to(device)
+            dynamics = mut.NNDynamicalSystem(2, 2, network=mlp)
+            dynamics_lst.append(dynamics)
+
+        ds = mut.NNEnsembleDynamicalSystem(dim_x=2, dim_u=2, ds_lst=dynamics_lst)
         ds.to(device)
         return ds
 

@@ -68,11 +68,7 @@ class TestEnsemble:
             network_lst.append(net)
             mean += net(x_batch)
 
-        ensemble = mut.EnsembleNetwork(
-            (3,),
-            (5,),
-            network_lst,
-        )
+        ensemble = mut.EnsembleNetwork(3, 5, network_lst)
         mean = mean / 4
 
         np.testing.assert_allclose(

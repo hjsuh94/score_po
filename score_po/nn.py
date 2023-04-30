@@ -143,7 +143,7 @@ class EnsembleNetwork(nn.Module):
 
     def get_mean(self, x_batch):
         B = x_batch.shape[0]
-        batch = torch.zeros((self.K, B) + self.dim_out, device=x_batch.device)
+        batch = torch.zeros(self.K, B, self.dim_out, device=x_batch.device)
         for k, network in enumerate(self.network_lst):
             batch[k] = network(x_batch)
         return batch.mean(dim=0)
@@ -170,13 +170,13 @@ class EnsembleNetwork(nn.Module):
 
         B = x_batch.shape[0]
 
-        batch = torch.zeros((self.K, B) + self.dim_out, device=x_batch.device)
+        batch = torch.zeros(self.K, B, self.dim_out, device=x_batch.device)
         for k, network in enumerate(self.network_lst):
             batch[k] = network(x_batch)
         mean = batch.mean(dim=0)
         dev = batch - mean.unsqueeze(0)  # K, B, dim_x
         # Note that empirical variance requires us to divide by K - 1 instead of K.
-        e_str = self.get_einsum_string(len(self.dim_out))
+        e_str = self.get_einsum_string(1)
         summation_string = "eb" + e_str + "," + e_str + "," + "eb" + e_str + "->eb"
         pairwise_dev = torch.einsum(summation_string, dev, metric, dev)
 
