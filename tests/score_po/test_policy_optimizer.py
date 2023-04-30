@@ -157,7 +157,7 @@ class TestPolicyOptimizerNNDynamics:
         costs = QuadraticCost()
         costs.load_from_config(cfg)
 
-        network = MLP(4, 2, [128, 128])
+        network = MLP(4, 2, [128, 128, 128])
         dynamics = NNDynamicalSystem(2, 2, network)
         dynamics.load_state_dict(torch.load("tests/score_po/weights/dynamics.pth"))
 
@@ -218,7 +218,7 @@ class TestDRiskScoreOptimizer:
         costs = QuadraticCost()
         costs.load_from_config(cfg)
 
-        network = MLP(4, 2, [128, 128])
+        network = MLP(4, 2, [128, 128, 128])
         dynamics = NNDynamicalSystem(2, 2, network)
         dynamics.load_state_dict(torch.load("tests/score_po/weights/dynamics.pth"))
 
@@ -279,4 +279,4 @@ class TestDRiskScoreOptimizer:
         optimizer.iterate()
 
 a = TestDRiskScoreOptimizer()
-a.test_nn_policy("cuda", True)
+a.test_nn_policy("cpu", True)
