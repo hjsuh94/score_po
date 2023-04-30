@@ -5,6 +5,8 @@ defaults:
 hydra:
   run:
     dir: ${user.run_dir}
+  sweep:
+    dir: ${user.run_dir}
 
 device: "cuda"
 seed: 123
