@@ -84,6 +84,7 @@ class MLP(nn.Module):
         dim_out: int,
         hidden_layers: List[int],
         activation: nn.Module = nn.ELU(),
+        layer_norm: bool = False
     ):
         super().__init__()
 
@@ -96,7 +97,8 @@ class MLP(nn.Module):
         layers.append(activation)
         for i in range(len(hidden_layers) - 1):
             layers.append(nn.Linear(hidden_layers[i], hidden_layers[i + 1]))
-            layers.append(nn.LayerNorm(hidden_layers[i + 1]))
+            if layer_norm:
+                layers.append(nn.LayerNorm(hidden_layers[i + 1]))
             layers.append(activation)
         layers.append(nn.Linear(hidden_layers[-1], dim_out))
 
