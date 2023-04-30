@@ -83,7 +83,7 @@ class MLP(nn.Module):
         dim_in: int,
         dim_out: int,
         hidden_layers: List[int],
-        activation: nn.Module = nn.ReLU(),
+        activation: nn.Module = nn.ELU(),
     ):
         super().__init__()
 
@@ -96,59 +96,11 @@ class MLP(nn.Module):
         layers.append(activation)
         for i in range(len(hidden_layers) - 1):
             layers.append(nn.Linear(hidden_layers[i], hidden_layers[i + 1]))
+            layers.append(nn.LayerNorm(hidden_layers[i + 1]))
             layers.append(activation)
         layers.append(nn.Linear(hidden_layers[-1], dim_out))
 
         self.mlp = nn.Sequential(*layers)
-
-    def get_vectorized_parameters(self) -> torch.Tensor:
-        """
-        Get a vectorized representation of the parameters.
-        """
-        params_vec = torch.zeros(0)
-        for i in range(len(self.mlp)):
-            if type(self.mlp[i]) == nn.Linear:
-                params_vec = torch.hstack((params_vec, torch.ravel(self.mlp[i].weight)))
-                params_vec = torch.hstack((params_vec, self.mlp[i].bias))
-        return params_vec
-
-    def set_vectorized_parameters(self, params_vector: torch.Tensor):
-        """
-        Get a vectorized representation of the parameters.
-        """
-        idx = 0
-        for i in range(len(self.mlp)):
-            layer = self.mlp[i]
-            if type(layer) == nn.Linear:
-                dim_in = layer.in_features
-                dim_out = layer.out_features
-
-                # Recover linear and bias parameters.
-                linear_params = params_vector[idx : idx + dim_in * dim_out]
-                idx += dim_in * dim_out
-                bias_params = params_vector[idx : idx + dim_out]
-                idx += dim_out
-
-                # Set the NN parameters.
-                layer.weight = nn.parameter.Parameter(
-                    linear_params.view(dim_out, dim_in)
-                )
-                layer.bias = nn.parameter.Parameter(bias_params)
-
-    def get_vectorized_gradients(self):
-        """
-        If the layers have registered gradients, extract them out to a vector
-        representation.
-        """
-        device = self.mlp[0].bias.device
-        params_vec = torch.zeros(0).to(device)
-        for i in range(len(self.mlp)):
-            if type(self.mlp[i]) == nn.Linear:
-                params_vec = torch.hstack(
-                    (params_vec, torch.ravel(self.mlp[i].weight.grad))
-                )
-                params_vec = torch.hstack((params_vec, self.mlp[i].bias.grad))
-        return params_vec
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.mlp(x)
@@ -274,6 +226,7 @@ def train_network(
         )
 
     net.train()
+    net = net.to(params.device)    
 
     optimizer = optim.Adam(net.parameters(), params.adam_params.lr)
     scheduler = optim.lr_scheduler.CosineAnnealingLR(
@@ -299,7 +252,6 @@ def train_network(
     best_loss = np.inf
 
     training_loss = 0.0
-    net = net.to(params.device)
     for epoch in tqdm(range(params.adam_params.epochs)):
         for z_batch in data_loader_train:
             optimizer.zero_grad()
@@ -323,7 +275,7 @@ def train_network(
                 wandb.log(
                     {
                         "training_loss": training_loss,
-                        "validation loss": loss_eval.item(),
+                        "validation3 loss": loss_eval.item(),
                     },
                     step=epoch,
                 )
@@ -447,3 +399,75 @@ def tensor_linspace(start, end, steps=10):
 
     out = start_w * start + end_w * end
     return out.to(start.device)
+
+
+class MLPwEmbedding(torch.nn.Module):
+    """
+    Train an MLP with Embedding.
+    hidden_layers takes a list of hidden layers, 
+    and S takes a positive integer value that corresponds to number of tokens.
+    For example,
+
+    MLP(dim_in=3, dim_out=5, S=10, nn_layers=[128, 128])
+
+    creates a MLP with two hidden layers with 128 width.
+    
+    The architecture choice the MLPwEmbedding assumes that all the 
+    nn layers are of equal size.
+    """
+    def __init__(
+        self,
+        dim_in: int,
+        dim_out: int,
+        hidden_layers: List[int],
+        embedding_size: int, # number of tokens
+        activation: nn.Module = nn.ELU(),
+    ):
+        super().__init__()
+
+        self.dim_in = dim_in
+        self.dim_out = dim_out
+        self.embedding_size = embedding_size
+        self.hidden_layers = hidden_layers
+        self.act = activation
+        
+        # assert all elements of hideen layers are equal.
+        if len(set(hidden_layers)) != 1:
+            raise ValueError("hidden_layers must have same elements.")
+
+        self.initial = nn.Linear(dim_in, hidden_layers[0])
+        self.embed = nn.Embedding(embedding_size, hidden_layers[0])
+        self.final = nn.Linear(hidden_layers[-1], dim_out)
+
+        self.layers = []
+        for i in range(len(hidden_layers)-1):
+            self.layers.append(LinearBlock(hidden_layers[i], hidden_layers[i+1]))
+        self.hl = nn.Sequential(*self.layers)
+
+    def forward(self, x: torch.Tensor, s: torch.int) -> torch.Tensor:
+        s = torch.Tensor([s]).type(torch.int).to(x.device)
+        x = self.initial(x)
+        x = self.act(x)
+        for i in range(len(self.hidden_layers) - 1):
+            x = self.layers[i](x, self.embed(s))
+        x = self.final(x)
+        return x
+
+
+class LinearBlock(torch.nn.Module):
+    def __init__(self, dim_in, dim_out, activation=nn.ELU()):
+        super().__init__()
+        self.linear = nn.Linear(dim_in, dim_out)
+        self.act = activation
+        self.layernorm = nn.LayerNorm(dim_out)
+        
+    def forward(self, x, y):
+        x = self.linear(x) * y
+        x = self.layernorm(x)
+        x = self.act(x)
+        return x
+
+def generate_cosine_schedule(sigma_max, sigma_min, steps):
+    # normalize space between 0 to 1.
+    x = 0.5 * (torch.cos(torch.linspace(0, torch.pi, steps)) + 1)
+    return (sigma_max - sigma_min) * x + sigma_min
