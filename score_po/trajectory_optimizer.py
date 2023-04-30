@@ -9,7 +9,10 @@ import matplotlib.pyplot as plt
 import wandb
 
 from score_po.dynamical_system import DynamicalSystem
-from score_po.score_matching import ScoreEstimatorXux, ScoreEstimatorXu
+from score_po.score_matching import (
+    ScoreEstimatorXux, ScoreEstimatorXu,
+    NoiseConditionedScoreEstimatorXu,
+    NoiseConditionedScoreEstimatorXux)
 from score_po.data_distance import DataDistanceEstimatorXux
 from score_po.costs import Cost
 from score_po.trajectory import (
@@ -57,6 +60,7 @@ class TrajectoryOptimizer:
         self.params = params
         self.cost = params.cost
         self.trj = params.trj
+        self.iter = 0        
 
     def get_value_loss(self):
         # Loop over trajectories to compute reward loss.
@@ -117,10 +121,11 @@ class TrajectoryOptimizer:
             self.trj.parameters(), lr=self.params.lr
         )
         
+
         for iter in range(self.params.max_iters - 1):
             if callback is not None:
                 callback(self, loss.item(), iter)
-            
+                
             optimizer.zero_grad()
             loss = self.get_value_loss() + self.get_penalty_loss()
             loss.backward()
@@ -143,6 +148,8 @@ class TrajectoryOptimizer:
                     iter + 1, loss.item(), time.time() - start_time
                 )
             )
+            
+            self.iter += 1
 
         return self.cost_lst
     
@@ -190,7 +197,7 @@ class TrajectoryOptimizerSF(TrajectoryOptimizer):
         sz_trj = self.sf.get_score_z_given_z(z_trj)
         sx_trj, su_trj, sxnext_trj = self.sf.get_xux_from_z(sz_trj)
         
-        weight = -1 / self.params.sf.sigma ** 2 * self.params.beta
+        weight = -self.params.sf.sigma ** 2 * self.params.beta
    
         if isinstance(self.trj, BVPTrajectory):
             self.trj.xnext_trj.grad += weight * sx_trj[1:]
@@ -202,6 +209,42 @@ class TrajectoryOptimizerSF(TrajectoryOptimizer):
             self.trj.u_trj.grad += weight * su_trj
         else:
             raise ValueError("Must be BVPTrajectory or IVPTrajectory")
+
+
+""" Variant of TrjaectoryOptimizerSF with Variance annealing """
+class TrajectoryOptimizerNCSF(TrajectoryOptimizerSF):
+    def __init__(self, params: TrajectoryOptimizerSFParams, **kwargs):
+        super().__init__(params)
+        self.sf = params.sf
+        self.sigma_lst = params.sf.sigma_lst
+        assert isinstance(self.sf, NoiseConditionedScoreEstimatorXux)
+        
+    def get_current_sigma(self):
+        idx = round(
+            len(self.sigma_lst) * ((self.iter) / (self.params.max_iters + 1)) - 0.5)
+        return idx, self.sf.sigma_lst[idx]
+        
+    def modify_gradients(self):
+        # Modify value loss by applying score function.
+        sigma_idx, sigma = self.get_current_sigma()
+        #weight = -1 / sigma ** 2 * self.params.beta
+        weight = -sigma ** 2 * self.params.beta
+        x_trj, u_trj = self.trj.get_full_trajectory()
+        
+        z_trj = torch.cat((x_trj[:-1], u_trj, x_trj[1:]), dim=1)
+        sz_trj = self.sf.get_score_z_given_z(z_trj, sigma_idx)
+        sx_trj, su_trj, sxnext_trj = self.sf.get_xux_from_z(sz_trj)
+   
+        if isinstance(self.trj, BVPTrajectory):
+            self.trj.xnext_trj.grad += weight * sx_trj[1:]
+            self.trj.xnext_trj.grad += weight * sxnext_trj[:-1]
+            self.trj.u_trj.grad += weight * su_trj
+        elif isinstance(self.trj, IVPTrajectory):
+            self.trj.xnext_trj.grad[:-1] += weight * sx_trj[1:]
+            self.trj.xnext_trj.grad += weight * sxnext_trj
+            self.trj.u_trj.grad += weight * su_trj
+        else:
+            raise ValueError("Must be BVPTrajectory or IVPTrajectory")        
 
 
 """ TrajectoryOptimizer with First Order + Dircol + DDE"""
@@ -313,4 +356,39 @@ class TrajectoryOptimizerSS(TrajectoryOptimizer):
         sz_trj = sz_trj.clone().detach()
 
         score = torch.einsum("ti,ti->t", z_trj, sz_trj).sum()
-        return -score    
+        return -score
+
+
+""" Variant of TrjaectoryOptimizerSS with Variance annealing """
+class TrajectoryOptimizerNCSS(TrajectoryOptimizerSS):
+    def __init__(self, params: TrajectoryOptimizerSFParams, **kwargs):
+        super().__init__(params)
+        self.sigma_lst = params.sf.sigma_lst
+        assert isinstance(self.sf, NoiseConditionedScoreEstimatorXu)
+        
+    def get_current_sigma(self):
+        idx = round(
+            len(self.sigma_lst) * ((self.iter) / (self.params.max_iters + 1)) - 0.5)
+        return idx, self.sf.sigma_lst[idx] 
+
+    def get_penalty_loss(self):
+        """
+        We compute a quantity such that when autodiffed w.r.t. θ, we
+        obtain the score w.r.t parameters, e.g. computes ∇_θ log p(z). Using the chain rule,
+        we break down the gradient into ∇_θ log p(z) = ∇_z log p(z) *  ∇_θ z.
+        Since we don't want to compute ∇_θ z manually, we calculate the quantity
+        (∇_z log p(z) * z) and and detach ∇_z log p(z) from the computation graph
+        so that ∇_θ(∇_z log p(z) * z) = ∇_z log p(z) * ∇_θ z.
+        """
+        idx, sigma = self.get_current_sigma()
+        x_trj, u_trj = self.rollout_trajectory()
+        z_trj = torch.cat((x_trj[:-1], u_trj), dim=1)
+        
+        sz_trj = self.sf.get_score_z_given_z(z_trj, idx)
+
+        # Here, ∇_z log p(z) is detached from the computation graph so that we ignore
+        # terms related to ∂(∇_z log p(z))/∂θ.
+        sz_trj = sz_trj.clone().detach()
+
+        score = torch.einsum("ti,ti->t", z_trj, sz_trj).sum()
+        return -score
