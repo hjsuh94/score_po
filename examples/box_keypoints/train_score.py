@@ -7,7 +7,7 @@ from torch.utils.data import TensorDataset
 import hydra
 from omegaconf import DictConfig
 
-from score_po.score_matching import ScoreEstimator
+from score_po.score_matching import ScoreEstimatorXu
 from score_po.nn import MLP, TrainParams
 
 
@@ -79,7 +79,7 @@ def main(cfg: DictConfig):
 
     dataset = TensorDataset(pts_flatten_batch)
     network = MLP(10, 10, cfg.nn_layers)
-    sf = ScoreEstimator(10, 0, network)
+    sf = ScoreEstimatorXu(10, 0, network)
 
     params = TrainParams()
     params.load_from_config(cfg)

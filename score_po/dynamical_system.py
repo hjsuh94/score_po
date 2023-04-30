@@ -26,7 +26,6 @@ class DynamicalSystem(torch.nn.Module):
         self.dim_u = dim_u
         self.is_differentiable = False
 
-    @abc.abstractmethod
     def dynamics(self, x, u):
         """
         Evaluate dynamics in state-space form.
@@ -36,6 +35,7 @@ class DynamicalSystem(torch.nn.Module):
         output:
             xnext of shape n
         """
+        return self.dynamics_batch(x.unsqueeze(0), u.unsqueeze(0)).squeeze(0)
 
     @abc.abstractmethod
     def dynamics_batch(self, x_batch, u_batch):
@@ -151,3 +151,19 @@ class NNDynamicalSystem(DynamicalSystem):
             )
 
         return score_po.nn.train_network(self, params, dataset, loss, split=True)
+
+
+def midpoint_integration(
+    dyn_fun: callable, x: torch.Tensor, u: torch.Tensor, dt: float
+):
+    """
+    Given a continuous-time dynamics xdot = f(x, u), compute the discrete-time dynamics via mid-point integration
+
+    Args:
+      dyn_fun: xdot = dyn_fun(x, u)
+    """
+    xdot = dyn_fun(x, u)
+    x_mid = x + xdot * dt / 2
+    xdot_mid = dyn_fun(x_mid, u)
+    x_next = x + xdot_mid * dt
+    return x_next

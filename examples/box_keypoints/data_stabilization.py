@@ -9,14 +9,14 @@ import hydra
 from hydra.utils import get_original_cwd
 from omegaconf import DictConfig
 
-from score_po.score_matching import ScoreEstimator
+from score_po.score_matching import ScoreEstimatorXu
 from score_po.nn import MLP, TrainParams
 
 
 @hydra.main(config_path="./config", config_name="score_training")
 def main(cfg: DictConfig):
     network = MLP(10, 10, cfg.nn_layers)
-    sf = ScoreEstimator(10, 0, network)
+    sf = ScoreEstimatorXu(10, 0, network)
     sf.load_state_dict(
         torch.load(
             os.path.join(

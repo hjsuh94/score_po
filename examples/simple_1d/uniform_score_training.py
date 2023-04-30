@@ -15,7 +15,7 @@ import numpy as np
 import torch
 
 from score_po.nn import MLP, TrainParams, Normalizer
-from score_po.score_matching import ScoreEstimator, langevin_dynamics
+from score_po.score_matching import ScoreEstimatorXu, langevin_dynamics
 
 
 def generate_dataset(size: int, a: float, b: float, device: str):
@@ -31,8 +31,8 @@ def train_score_estimator(
 ):
     mlp = MLP(1, 1, [128, 128, 128])
     normalizer = Normalizer(k=torch.tensor(b / 2), b=torch.tensor(a + 0.5))
-    sf = ScoreEstimator(dim_x=1, dim_u=0, network=mlp, z_normalizer=normalizer)
-    sf.train_network(dataset, train_params, sigma=0.1, mode="denoising")
+    sf = ScoreEstimatorXu(dim_x=1, dim_u=0, network=mlp, x_normalizer=normalizer)
+    sf.train_network(dataset, train_params, sigma=0.1)
     return sf
 
 
