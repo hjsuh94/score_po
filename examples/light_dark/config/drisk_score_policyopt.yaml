@@ -9,13 +9,14 @@ policy:
   T: 20
   x0_upper: [0.8, 0.8] # x0_upper = x0_lower for trajopt.
   x0_lower: [-0.8, -0.8]
-  batch_size: 128 # 1 for trajopt.
-  std: 0.0
+  batch_size: 1024 # 1 for trajopt.
+  std: 1e-2
   lr: 1e-3
   max_iters: 200
   save_best_model: checkpoint.pth
   load_ckpt: null
   device: "cpu"
+  first_order: False
   beta: 100.0
 
   wandb:

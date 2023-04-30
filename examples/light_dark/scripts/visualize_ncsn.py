@@ -28,12 +28,14 @@ def main(cfg: DictConfig):
     sf.load_state_dict(torch.load(
         os.path.join(get_original_cwd(),
                      "examples/light_dark/weights/ncsn_xu.pth")))
+    
+    print(sf.sigma_lst)
 
 
     # plot the gradients.
     X, Y = np.meshgrid(range(32), range(32))
     pos = np.vstack([X.ravel(), Y.ravel()]).T
-    pos = 2.0 * (torch.Tensor(pos) / 32 - 0.5)
+    pos = 3.0 * (torch.Tensor(pos) / 32 - 0.5)
 
     for idx in range(10):
         plt.figure(figsize=(8,4))

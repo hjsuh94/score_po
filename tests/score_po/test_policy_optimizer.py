@@ -279,4 +279,4 @@ class TestDRiskScoreOptimizer:
         optimizer.iterate()
 
 a = TestDRiskScoreOptimizer()
-a.test_open_loop_policy("cuda", True)
+a.test_nn_policy("cuda", True)
