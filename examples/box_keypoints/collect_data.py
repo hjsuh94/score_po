@@ -27,10 +27,9 @@ def main(cfg: DictConfig):
     start_time = time.time()
     while count < cfg.dataset_size:
         if cfg.frame == "world":
-            x = 0.25 * (np.random.rand(5) - 0.5)
-            x[2] = 2.0 * np.pi * np.random.rand(1)
+            x = 0.8 * (np.random.rand(5) - 0.5)
         elif cfg.frame == "body":
-            x = 0.25 * (np.random.rand(5) - 0.5)
+            x = 0.8 * (np.random.rand(5) - 0.5)
             x[0:3] = 0.0
         else:
             raise ValueError
