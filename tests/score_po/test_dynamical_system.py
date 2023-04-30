@@ -7,7 +7,9 @@ from hydra import initialize, compose
 from torch.utils.data import TensorDataset
 
 import score_po.dynamical_system as mut
-from score_po.nn import MLP, TrainParams, Normalizer
+from score_po.nn import (
+    MLP, TrainParams, Normalizer,
+    EnsembleNetwork)
 
 
 class TestNNDynamicalSystem:
@@ -109,8 +111,47 @@ class TestNNDynamicalSystem:
         np.testing.assert_allclose(
             loss_unnormalized.cpu().detach(), loss_unnormalized_expected.cpu().detach()
         )
+        
+class TestNNEnsembleDynamicalSystem:
+    def initialize(self, device: Literal["cpu", "cuda"]):
+        network_lst = [MLP(4, 2, [128, 128, 128]).to(device) for _ in range(4)]
+        network = EnsembleNetwork(4, 2, network_lst)
+        ds = mut.NNEnsembleDynamicalSystem(dim_x=2, dim_u=2, network=network)
+        ds.to(device)
+        return ds
 
+    @pytest.mark.parametrize("device", ("cpu", "cuda"))        
+    def test_eval(self, device: Literal["cpu", "cuda"]):
+        # (ensemble_dim, batch_dim, dim_x)
+        ds = self.initialize(device)
+        x_batch = torch.rand(4, 100, 2).to(device)
+        u_batch = torch.rand(4, 100, 2).to(device)
+        np.testing.assert_equal(ds.dynamics_batch(x_batch, u_batch).shape, 
+                                torch.Size([4, 100, 2]))
+        
+        with np.testing.assert_raises(ValueError):
+            x_batch = torch.rand(3, 100, 2).to(device)
+            u_batch = torch.rand(3, 100, 2).to(device)
+            ds.dynamics_batch(x_batch, u_batch)
+            
+    @pytest.mark.parametrize("device", ("cpu", "cuda"))
+    def test_train(self, device: Literal["cpu", "cuda"]):
+        torch.manual_seed(10)
+        dynamics = self.initialize(device)
+        dataset_size = 10000
 
+        x_batch = 2.0 * torch.rand(dataset_size, 2, device=device) - 1.0
+        u_batch = 2.0 * torch.rand(dataset_size, 2, device=device) - 1.0
+        xnext_batch = x_batch + u_batch
+        dataset = TensorDataset(x_batch, u_batch, xnext_batch)
+        params = TrainParams()
+        with initialize(config_path="./config"):
+            cfg = compose(config_name="train_params")
+            params.load_from_config(cfg)
+            params.device = device
+        loss_lst = dynamics.train_network(dataset, params)
+        
+    
 @pytest.mark.parametrize("device", ("cpu", "cuda"))
 def test_sim_openloop_batch(device):
     dim_x = 3
