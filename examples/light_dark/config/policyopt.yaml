@@ -9,13 +9,14 @@ policy:
   T: 20
   x0_upper: [0.5, 0.5] # x0_upper = x0_lower for trajopt.
   x0_lower: [-0.5, -0.5]
-  batch_size: 128 # 1 for trajopt.
-  std: 1e-2
+  batch_size: 1024 # 1 for trajopt.
+  std: 1e-3
   lr: 1e-3
-  max_iters: 100
+  max_iters: 300
   save_best_model: checkpoint.pth
   load_ckpt: null
   device: "cuda"
+  first_order: False
 
   wandb:
     enabled: ${user.wandb_enabled}

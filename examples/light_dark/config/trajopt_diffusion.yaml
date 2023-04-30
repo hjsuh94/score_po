@@ -5,9 +5,10 @@ hydra:
   run:
     dir: ${user.run_dir}
 
-nn_layers: [512, 512]
+nn_layers: [1024, 1024, 512, 512]
 plot_period: 10
-sf_path: "examples/light_dark/weights/checkpoint_xux_015.pth"
+sf_path: "examples/light_dark/weights/score_xux_010.pth"
+dde_path: "examples/light_dark/weights/dde_xux.pth"
 
 trj:
   T: 25
@@ -20,7 +21,7 @@ trj:
   saving_period: 100
   load_ckpt: null
   device: "cuda"
-  beta: 1000
+  beta: 10.0
 
   wandb:
     enabled: ${user.wandb_enabled}

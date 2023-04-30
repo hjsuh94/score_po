@@ -6,8 +6,9 @@ from torch.utils.data import TensorDataset
 import hydra
 from omegaconf import DictConfig
 
-from score_po.score_matching import ScoreEstimatorXux
-from score_po.nn import MLP, TrainParams, Normalizer
+from score_po.score_matching import NoiseConditionedScoreEstimatorXux
+from score_po.nn import (
+    MLPwEmbedding, TrainParams, Normalizer, generate_cosine_schedule)
 
 from examples.light_dark.dynamics import SingleIntegrator
 from examples.light_dark.environment import Environment
@@ -26,10 +27,11 @@ def main(cfg: DictConfig):
     params = TrainParams()
     params.load_from_config(cfg)
     
-    network = MLP(6, 6, cfg.nn_layers)
-    sf = ScoreEstimatorXux(
+    network = MLPwEmbedding(6, 6, cfg.nn_layers, 10)
+    sf = NoiseConditionedScoreEstimatorXux(
         2, 2, network, x_normalizer=None, u_normalizer=u_normalizer)
-    sf.train_network(dataset, params, sigma=0.1 * torch.ones(1))
+    sf.train_network(dataset, params, sigma_lst=generate_cosine_schedule(
+        0.3, 0.01, 10))
 
 
 if __name__ == "__main__":

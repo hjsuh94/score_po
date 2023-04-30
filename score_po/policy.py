@@ -130,7 +130,6 @@ class NNPolicy(Policy):
         self.dim_u = dim_u
         self.net = network
         assert isinstance(self.net, nn.Module)
-        self.dim_params = len(self.net.get_vectorized_parameters())
         self.tv = False
 
     def _unclipped_u(self, x_batch, t):

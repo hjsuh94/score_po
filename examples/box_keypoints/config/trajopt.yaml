@@ -1,0 +1,35 @@
+defaults:
+  - user: terry
+
+hydra:
+  run:
+    dir: ${user.run_dir}
+
+nn_layers_dyn: [128, 128, 128, 128]
+nn_layers_sf: [128, 128, 128, 128]
+
+policy:
+  T: 10
+  x0_upper: [0.3, 0.2] # x0_upper = x0_lower for trajopt.
+  x0_lower: [0.3, 0.2]
+  batch_size: 1 # 1 for trajopt.
+  std: 0.0
+  lr: 3e-3
+  max_iters: 300
+  save_best_model: checkpoint_trajopt.pth
+  load_ckpt: null
+  device: "cpu"
+  beta: 0.00
+
+  wandb:
+    enabled: ${user.wandb_enabled}
+    project: score_po
+    dir: ${user.run_dir}
+    name: ${now:%Y.%m.%d-%H.%M.%S}_trajopt_score_hole_beta_${policy.beta}_cl
+    entity: ${user.wandb_entity}
+
+cost:
+  Q: [1, 1, 1, 1]
+  R: [1e-1, 1e-1]
+  Qd: [100, 100]
+  xd: [0, 0]

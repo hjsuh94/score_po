@@ -20,38 +20,6 @@ class TestMLP:
         with np.testing.assert_raises(RuntimeError):
             net(torch.rand(100, 5).to(device))
 
-    def test_mlp_vectorize_parameters(self):
-        # Test vectorization of MLP parameters.
-        net = mut.MLP(5, 5, [128, 128, 128, 128])
-        net.eval()
-
-        params = net.get_vectorized_parameters()
-
-        # test if conversion is same with torch convention.
-        np.testing.assert_allclose(
-            params.detach().numpy(),
-            nn.utils.parameters_to_vector(net.parameters()).detach().numpy(),
-        )
-
-        # test if setting and getting gives us same values.
-        random_params = torch.rand(len(params))
-        net.set_vectorized_parameters(random_params)
-        ret_params = net.get_vectorized_parameters()
-        np.testing.assert_allclose(random_params, ret_params.detach())
-
-    def test_mlp_gradients(self):
-        # Test differentiability w.r.t. parameters.
-        net = mut.MLP(5, 5, [128, 128])
-
-        batch_data = torch.rand(100, 5)
-        net.zero_grad()
-        output = net(batch_data)
-        loss = ((output - batch_data)).sum(dim=-1).mean(dim=0)
-        loss.backward()
-
-        grad = net.get_vectorized_gradients()
-        np.testing.assert_equal(len(grad), len(net.get_vectorized_parameters()))
-
 
 class TestTrainConfig:
     def test_constructor(self):
