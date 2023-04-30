@@ -38,11 +38,12 @@ def get_ensembles(x, data, cfg):
         train_network(net, params, dataset, loss_fn, split=False)
         network_lst.append(net)
 
-    ensemble = EnsembleNetwork((1,), (1,), network_lst)
+    ensemble = EnsembleNetwork(1, 1, network_lst)
 
-    x_tensor = torch.Tensor(x).reshape(-1, 1).to(cfg.device)
-    z = ensemble(x_tensor).detach().cpu().numpy()[:, 0]
-    std = np.sqrt(ensemble.get_variance(x_tensor).detach().cpu().numpy())
+    x_tensor = torch.Tensor(x).to(cfg.device)
+    x_tensor_cat = torch.cat(cfg.ensemble_size * [x_tensor[None,:]])[:,:,None]
+    z = np.mean(ensemble(x_tensor_cat).detach().cpu().numpy(), axis=0)[:,0]
+    std = np.sqrt(ensemble.get_variance(x_tensor[:,None]).detach().cpu().numpy())
     return z, std
 
 
