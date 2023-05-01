@@ -19,10 +19,12 @@ from examples.light_dark.dynamics import SingleIntegrator
 def main(cfg: DictConfig):
     dynamics_true = SingleIntegrator()
     u_normalizer = Normalizer(k =0.1 * torch.ones(2), b= torch.zeros(2))
-    network = MLP(4, 2, [128, 128, 128])
-    dynamics = NNDynamicalSystem(2, 2, network=network, u_normalizer=u_normalizer)
-    dynamics_lst = [dynamics.to(cfg.train.device) for _ in range(5)]
-    
+
+    dynamics_lst = []
+    for i in range(5):
+        network = MLP(4, 2, [128, 128, 128])
+        dynamics = NNDynamicalSystem(2, 2, network=network, u_normalizer=u_normalizer)
+        dynamics_lst.append(dynamics)
     dynamics = NNEnsembleDynamicalSystem(dim_x=2, dim_u=2, ds_lst=dynamics_lst,
                                          u_normalizer=u_normalizer)
     

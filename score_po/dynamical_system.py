@@ -222,6 +222,8 @@ class NNEnsembleDynamicalSystem(DynamicalSystem):
         """
         This function assumes x_batch and u_batch is of shape
         (ensemble_size, batch_size, dim_x) and (ensemble_size, batch_size, dim_u).
+        It will return a xnext_batch of shape
+        (ensemble_size, batch_size, dim_x).
         """
         if ((x_batch.shape[0] != len(self.ds_lst)) or
             (u_batch.shape[0] != len(self.ds_lst))):
@@ -266,7 +268,8 @@ class NNEnsembleDynamicalSystem(DynamicalSystem):
         for k, ds in enumerate(self.ds_lst):
             new_params = copy.deepcopy(params)
             if (new_params.save_best_model) is not None:
-                new_params.save_best_model += "_{:02d}".format(k)
+                filename, ext = os.path.splitext(new_params.save_best_model)
+                new_params.save_best_model = filename + "_{:02d}".format(k) + ext
                 
             def loss(tensors, placeholder):
                 x, u, x_next = tensors
@@ -280,7 +283,8 @@ class NNEnsembleDynamicalSystem(DynamicalSystem):
             
     def load_ensemble(self, filename):
         for k, ds in enumerate(self.ds_lst):
-            ds.load_state_dict(torch.load(filename + "_{:02d}".format(k)))
+            pre, ext = os.path.splitext(filename)
+            ds.load_state_dict(torch.load(pre + "_{:02d}".format(k) + ext))
             
     def to(self, device):
         for ds in self.ds_lst:

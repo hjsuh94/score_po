@@ -429,7 +429,6 @@ class TrajectoryOptimizerSSEnsemble(TrajectoryOptimizer):
         
     def initialize(self):
         u_trj_init = torch.zeros(self.trj.u_trj.shape).to(self.params.device)
-        u_trj_init += torch.randn_like(u_trj_init) * 0.0
         self.trj.u_trj = torch.nn.Parameter(u_trj_init)
         
     def rollout_trajectory(self):
@@ -490,53 +489,9 @@ class CEMEnsembleParams(TrajectoryOptimizerParams):
             self.ds.to(device)
 
 
-class CEMEnsemble(TrajectoryOptimizer):
+class CEMEnsemble(TrajectoryOptimizerSSEnsemble):
     def __init__(self, params: CEMEnsembleParams, **kwargs):
         super().__init__(params)
-        self.ds = params.ds
-        self.K = len(self.ds.ds_lst)
-        assert isinstance(self.trj, SSTrajectory)
-        assert isinstance(self.ds, NNEnsembleDynamicalSystem)
-        
-    def initialize(self):
-        u_trj_init = torch.zeros(self.trj.u_trj.shape).to(self.params.device)
-        u_trj_init += torch.randn_like(u_trj_init) * 0.0
-        self.trj.u_trj = torch.nn.Parameter(u_trj_init)
-        
-    def rollout_trajectory(self):
-        """
-        Rollout trajectory with ensembles.
-        """
-        x_trj = torch.zeros(
-            (self.K , self.trj.T + 1, self.ds.dim_x)).to(self.params.device)
-        u_trj = torch.cat(self.K * [self.trj.u_trj[None,:,:]])
-        x_trj[:,0,:] = self.trj.x0
-        
-        for t in range(self.trj.T):
-            x_trj[:,t+1,:] = self.ds.dynamics_batch(
-                x_trj[:,t,:][:,None,:], u_trj[:,t,:][:,None,:]
-            )[:,0,:]
-
-        return x_trj, u_trj
-        
-    def get_value_loss(self):
-        # Loop over trajectories to compute reward loss.
-        x_trj, u_trj = self.rollout_trajectory()
-        cost = torch.zeros(self.K).to(self.params.device)
-        for k in range(self.K):
-            cost[k] += self.cost.get_running_cost_batch(
-                x_trj[k,:-1,:], u_trj[k,:,:]).sum()
-            cost[k] += self.cost.get_terminal_cost(x_trj[k,-1,:])
-        return cost.mean()
-
-    def get_penalty_loss(self):
-        x_trj, u_trj = self.rollout_trajectory()
-        cost = torch.zeros(self.K).to(self.params.device)
-        for k in range(self.K):
-            cost[k] += self.cost.get_running_cost_batch(
-                x_trj[k,:-1,:], u_trj[k,:,:]).sum()
-            cost[k] += self.cost.get_terminal_cost(x_trj[k,-1,:])
-        return cost.var()
     
     def update_trajectory(self):
         u_trj_batch = torch.cat(self.params.batch_size * [self.trj.u_trj[None,:]])
@@ -576,8 +531,6 @@ class CEMEnsemble(TrajectoryOptimizer):
         start_time = time.time()
         print("Iteration: {:04d} | Cost: {:.3f} | Time: {:.3f}".format(0, loss, 0))
         self.cost_lst = np.zeros(self.params.max_iters)
-
-        best_cost = np.inf
         self.cost_lst[0] = loss.item()
 
         for iter in range(self.params.max_iters - 1):
@@ -590,8 +543,7 @@ class CEMEnsemble(TrajectoryOptimizer):
 
             if self.params.wandb_params.enabled:
                 wandb.log({"trj_loss": loss.item()})
-            if self.params.save_best_model is not None and (
-                self.params.saving_period % self.params.saving_period == 0):
+            if self.params.saving_period is not None and iter % self.params.saving_period == 0:
                 model_path = os.path.join(os.getcwd(), self.params.save_best_model)
                 model_dir = os.path.dirname(model_path)
                 if not os.path.exists(model_dir):
