@@ -265,6 +265,7 @@ class NNEnsembleDynamicalSystem(DynamicalSystem):
         """
         Train a network given a dataset and optimization parameters.
         """
+        loss_lst_esb = []
         for k, ds in enumerate(self.ds_lst):
             new_params = copy.deepcopy(params)
             if (new_params.save_best_model) is not None:
@@ -279,7 +280,8 @@ class NNEnsembleDynamicalSystem(DynamicalSystem):
                     
             loss_lst = score_po.nn.train_network(
                 ds, new_params, dataset, loss, split=True)
-        return loss_lst
+            loss_lst_esb.append(loss_lst)
+        return loss_lst_esb
             
     def load_ensemble(self, filename):
         for k, ds in enumerate(self.ds_lst):
