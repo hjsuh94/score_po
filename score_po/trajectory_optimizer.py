@@ -108,8 +108,7 @@ class TrajectoryOptimizer:
         self.trj = self.trj.to(self.params.device)
         self.initialize()
         self.trj.train()
-
-        loss = self.get_value_loss()
+        loss = self.get_value_loss() + self.params.beta * self.get_penalty_loss()
 
         start_time = time.time()
         print("Iteration: {:04d} | Cost: {:.3f} | Time: {:.3f}".format(0, loss, 0))
@@ -251,7 +250,7 @@ class TrajectoryOptimizerNCSF(TrajectoryOptimizerSF):
             self.trj.xnext_trj.grad += weight * sxnext_trj
             self.trj.u_trj.grad += weight * su_trj
         else:
-            raise ValueError("Must be BVPTrajectory or IVPTrajectory")        
+            raise ValueError("Must be BVPTrajectory or IVPTrajectory")    
 
 
 """ TrajectoryOptimizer with First Order + Dircol + DDE"""
