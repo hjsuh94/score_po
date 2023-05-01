@@ -1,6 +1,6 @@
 from omegaconf import DictConfig, OmegaConf
 import os
-from typing import Optional
+from typing import Optional, Union
 
 import hydra
 import matplotlib.pyplot as plt
@@ -10,31 +10,41 @@ import torch
 from examples.cartpole.cartpole_plant import CartpoleNNDynamicalSystem, CartpolePlant
 from score_po.dynamical_system import DynamicalSystem, sim_openloop
 from score_po.nn import AdamOptimizerParams, WandbParams, Normalizer
+from score_po.trajectory import SSTrajectory, BVPTrajectory
 from score_po.policy_optimizer import (
     PolicyOptimizer,
     PolicyOptimizerParams,
     DRiskScorePolicyOptimizer,
     DRiskScorePolicyOptimizerParams,
 )
-from score_po.score_matching import ScoreEstimatorXu
+from score_po.trajectory_optimizer import (
+    TrajectoryOptimizerSF,
+    TrajectoryOptimizerSFParams,
+    TrajectoryOptimizerSSParams,
+    TrajectoryOptimizerSS,
+)
+from score_po.score_matching import ScoreEstimatorXu, ScoreEstimatorXux
 from score_po.costs import QuadraticCost
 from score_po.policy import TimeVaryingOpenLoopPolicy, Clamper
 from examples.cartpole.score_training import get_score_network
 
 
 def plot_result(
-    policy_optimizer: PolicyOptimizer,
+    traj_optimizer: Union[TrajectoryOptimizerSS, TrajectoryOptimizerSF],
     plant: CartpolePlant,
     x_lo: torch.Tensor,
     x_up: torch.Tensor,
     u_max: float,
     dt: float,
 ):
-    device = policy_optimizer.params.device
-    u_trj = policy_optimizer.policy.params.data
+    device = traj_optimizer.params.device
+    u_trj = traj_optimizer.trj.u_trj.data
     x0 = torch.zeros((4,), device=device)
-    # Simulate with dynamical system in policy_optimizer.
-    x_trj_plan = sim_openloop(policy_optimizer.ds, x0, u_trj, None)
+    if isinstance(traj_optimizer, TrajectoryOptimizerSS):
+        # Simulate with the optimizer dynamics.
+        x_trj_plan = sim_openloop(traj_optimizer.ds, x0, u_trj, None)
+    elif isinstance(traj_optimizer, TrajectoryOptimizerSF):
+        x_trj_plan, u_trj = traj_optimizer.trj.get_full_trajectory()
     # Simulate with the true dynamics.
     x_trj_sim = sim_openloop(plant, x0, u_trj, None)
     x_trj_plan_np = x_trj_plan.cpu().detach().numpy()
@@ -44,7 +54,7 @@ def plot_result(
     ax1 = fig.add_subplot(121)
     ax1.plot(x_trj_plan_np[:, 0], x_trj_plan_np[:, 1], label="plan", color="b")
     ax1.plot(x_trj_sim_np[:, 0], x_trj_sim_np[:, 1], label="sim", color="g")
-    ax1.plot([0], [np.pi], '*', color="r")
+    ax1.plot([0], [np.pi], "*", color="r")
     x_lo_np = x_lo.cpu().detach().numpy()
     x_up_np = x_up.cpu().detach().numpy()
     ax1.plot(
@@ -57,8 +67,7 @@ def plot_result(
     ax1.set_xlabel("x (m)")
     ax1.set_ylabel(r"$\theta$")
     beta_val = 0
-    if isinstance(policy_optimizer.params, DRiskScorePolicyOptimizerParams):
-        beta_val = policy_optimizer.params.beta
+    beta_val = traj_optimizer.params.beta
     ax1.set_title(r"$\beta$" + f"={beta_val}")
 
     ax2 = fig.add_subplot(122)
@@ -70,7 +79,7 @@ def plot_result(
         linestyle="--",
         color="r",
     )
-    ax2.plot([0], [0], '*', color="r")
+    ax2.plot([0], [0], "*", color="r")
     ax2.legend()
     ax2.set_xlabel(r"$\dot{x}$")
     ax2.set_ylabel(r"$\dot{\theta}$")
@@ -100,9 +109,9 @@ def plot_result(
 def single_shooting(
     dynamical_system: CartpoleNNDynamicalSystem,
     x0: torch.Tensor,
-    score_estimator: Optional[ScoreEstimatorXu],
+    score_estimator: ScoreEstimatorXu,
     cfg: DictConfig,
-) -> torch.Tensor:
+):
     """
     Find a swing up trajectory by single shooting method.
 
@@ -110,39 +119,66 @@ def single_shooting(
       u_traj: Of shape (T-1, 1). u_traj[i]
     """
     device = x0.device
-    if score_estimator is None:
-        params = PolicyOptimizerParams()
-    else:
-        params = DRiskScorePolicyOptimizerParams()
+    params = TrajectoryOptimizerSSParams()
     params.load_from_config(cfg)
+    params.save_best_model = os.path.join(os.getcwd(), params.save_best_model)
     params.cost = QuadraticCost(
         Q=torch.zeros((4, 4)),
         R=torch.tensor([[0.000]]),
         Qd=torch.diag(torch.tensor([1, 1, 0.1, 0.1])),
         xd=torch.tensor([0, np.pi, 0, 0]),
     )
-    if score_estimator is not None:
-        params.sf = score_estimator
-    params.dynamical_system = dynamical_system
-    u_clip = Clamper(
-        lower=torch.tensor(-cfg.plant_param.u_max),
-        upper=torch.tensor(cfg.plant_param.u_max),
-        method=Clamper.Method.HARD,
+    params.trj = SSTrajectory(
+        dim_x=dynamical_system.dim_x,
+        dim_u=dynamical_system.dim_u,
+        T=params.T,
+        x0=x0,
     )
-    params.policy = TimeVaryingOpenLoopPolicy(
-        dim_x=4, dim_u=1, T=params.T, u_clip=u_clip
-    )
-    if cfg.policy.load_ckpt is not None:
-        params.policy.load_state_dict(torch.load(cfg.policy.load_ckpt))
+    params.ivp = True
+    params.sf = score_estimator
+    params.ds = dynamical_system
+    if cfg.trj.load_ckpt is not None:
+        params.trj.load_state_dict(torch.load(cfg.trj.load_ckpt))
 
     params.to_device(device)
 
-    if score_estimator is None:
-        policy_optimizer = PolicyOptimizer(params)
-    else:
-        policy_optimizer = DRiskScorePolicyOptimizer(params)
-    policy_optimizer.iterate()
-    return policy_optimizer
+    traj_optimizer = TrajectoryOptimizerSS(params)
+    traj_optimizer.iterate()
+    return traj_optimizer
+
+
+def dircol(
+    x0: torch.Tensor,
+    score_estimator: ScoreEstimatorXux,
+    cfg: DictConfig,
+):
+    device = x0.device
+    params = TrajectoryOptimizerSFParams()
+    params.load_from_config(cfg)
+    params.save_best_model = os.path.join(os.getcwd(), params.save_best_model)
+    params.cost = QuadraticCost(
+        Q=torch.zeros((4, 4)),
+        R=torch.tensor([[0.000]]),
+        Qd=torch.diag(torch.tensor([1, 1, 0.1, 0.1])),
+        xd=torch.tensor([0, np.pi, 0, 0]),
+    )
+    params.trj = BVPTrajectory(
+        dim_x=4,
+        dim_u=1,
+        T=params.T,
+        x0=x0,
+        xT=torch.tensor([0, np.pi, 0, 0], device=device),
+    )
+    params.ivp = False
+    params.sf = score_estimator
+    if cfg.trj.load_ckpt is not None:
+        params.trj.load_state_dict(torch.load(cfg.trj.load_ckpt))
+
+    params.to_device(device)
+
+    traj_optimizer = TrajectoryOptimizerSF(params)
+    traj_optimizer.iterate()
+    return traj_optimizer
 
 
 @hydra.main(config_path="./config", config_name="swingup")
@@ -157,24 +193,32 @@ def main(cfg: DictConfig):
     nn_plant.load_state_dict(torch.load(cfg.dynamics_load_ckpt))
     plant = CartpolePlant(dt=cfg.plant_param.dt)
 
-    if cfg.score_estimator_load_ckpt:
-        score_network = get_score_network()
-        sf = ScoreEstimatorXu(dim_x=4, dim_u=1, network=score_network).to(device)
-        sf.load_state_dict(torch.load(cfg.score_estimator_load_ckpt))
+    score_network = get_score_network(xu=cfg.single_shooting)
+    score_estimator_cls = ScoreEstimatorXu if cfg.single_shooting else ScoreEstimatorXux
+    sf = score_estimator_cls(dim_x=4, dim_u=1, network=score_network).to(device)
+    if cfg.single_shooting:
+        sf.load_state_dict(torch.load(cfg.score_estimator_xu_load_ckpt))
     else:
-        sf = None
+        sf.load_state_dict(torch.load(cfg.score_estimator_xux_load_ckpt))
 
-    policy_optimizer = single_shooting(
-        nn_plant,
-        x0=torch.tensor([0, 0, 0, 0.0], device=device),
-        score_estimator=sf,
-        cfg=cfg,
-    )
+    if cfg.single_shooting:
+        traj_optimizer = single_shooting(
+            nn_plant,
+            x0=torch.tensor([0, 0, 0, 0.0], device=device),
+            score_estimator=sf,
+            cfg=cfg,
+        )
+    else:
+        traj_optimizer = dircol(
+            x0=torch.tensor([0, 0, 0, 0.0], device=device),
+            score_estimator=sf,
+            cfg=cfg,
+        )
     x_lo = torch.tensor(cfg.plant_param.x_lo)
     x_up = torch.tensor(cfg.plant_param.x_up)
     u_max = cfg.plant_param.u_max
     dt = cfg.plant_param.dt
-    plot_result(policy_optimizer, plant, x_lo, x_up, u_max, dt)
+    plot_result(traj_optimizer, plant, x_lo, x_up, u_max, dt)
 
 
 if __name__ == "__main__":
