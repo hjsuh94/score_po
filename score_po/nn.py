@@ -83,7 +83,8 @@ class MLP(nn.Module):
         dim_in: int,
         dim_out: int,
         hidden_layers: List[int],
-        activation: nn.Module = nn.ReLU(),
+        activation: nn.Module = nn.ELU(),
+        layer_norm: bool = False
     ):
         super().__init__()
 
@@ -96,59 +97,12 @@ class MLP(nn.Module):
         layers.append(activation)
         for i in range(len(hidden_layers) - 1):
             layers.append(nn.Linear(hidden_layers[i], hidden_layers[i + 1]))
+            if layer_norm:
+                layers.append(nn.LayerNorm(hidden_layers[i + 1]))
             layers.append(activation)
         layers.append(nn.Linear(hidden_layers[-1], dim_out))
 
         self.mlp = nn.Sequential(*layers)
-
-    def get_vectorized_parameters(self) -> torch.Tensor:
-        """
-        Get a vectorized representation of the parameters.
-        """
-        params_vec = torch.zeros(0)
-        for i in range(len(self.mlp)):
-            if type(self.mlp[i]) == nn.Linear:
-                params_vec = torch.hstack((params_vec, torch.ravel(self.mlp[i].weight)))
-                params_vec = torch.hstack((params_vec, self.mlp[i].bias))
-        return params_vec
-
-    def set_vectorized_parameters(self, params_vector: torch.Tensor):
-        """
-        Get a vectorized representation of the parameters.
-        """
-        idx = 0
-        for i in range(len(self.mlp)):
-            layer = self.mlp[i]
-            if type(layer) == nn.Linear:
-                dim_in = layer.in_features
-                dim_out = layer.out_features
-
-                # Recover linear and bias parameters.
-                linear_params = params_vector[idx : idx + dim_in * dim_out]
-                idx += dim_in * dim_out
-                bias_params = params_vector[idx : idx + dim_out]
-                idx += dim_out
-
-                # Set the NN parameters.
-                layer.weight = nn.parameter.Parameter(
-                    linear_params.view(dim_out, dim_in)
-                )
-                layer.bias = nn.parameter.Parameter(bias_params)
-
-    def get_vectorized_gradients(self):
-        """
-        If the layers have registered gradients, extract them out to a vector
-        representation.
-        """
-        device = self.mlp[0].bias.device
-        params_vec = torch.zeros(0).to(device)
-        for i in range(len(self.mlp)):
-            if type(self.mlp[i]) == nn.Linear:
-                params_vec = torch.hstack(
-                    (params_vec, torch.ravel(self.mlp[i].weight.grad))
-                )
-                params_vec = torch.hstack((params_vec, self.mlp[i].bias.grad))
-        return params_vec
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.mlp(x)
@@ -245,7 +199,12 @@ def tuple_to_device(tup, device):
 
 
 def train_network(
-    net: nn.Module, params: TrainParams, dataset: TensorDataset, loss_fn, split=True
+    net: nn.Module,
+    params: TrainParams,
+    dataset: TensorDataset,
+    loss_fn,
+    split=True,
+    callback=None
 ):
     """
     Common utility function to train a neural network.
@@ -253,6 +212,7 @@ def train_network(
     params: TrainParams
     loss_fn: a loss function for the optimization problem.
     loss_fn should have signature loss_fn(x_batch, net)
+    callback: should have signature callback(net, loss, epoch)
     """
     if params.wandb_params.enabled:
         if params.wandb_params.dir is not None and not os.path.exists(
@@ -268,6 +228,7 @@ def train_network(
         )
 
     net.train()
+    net = net.to(params.device)    
 
     optimizer = optim.Adam(net.parameters(), params.adam_params.lr)
     scheduler = optim.lr_scheduler.CosineAnnealingLR(
@@ -293,7 +254,6 @@ def train_network(
     best_loss = np.inf
 
     training_loss = 0.0
-    net = net.to(params.device)
     for epoch in tqdm(range(params.adam_params.epochs)):
         for z_batch in data_loader_train:
             optimizer.zero_grad()
@@ -304,7 +264,10 @@ def train_network(
             scheduler.step()
             training_loss += loss.item() * z_batch[0].shape[0]
         training_loss /= len(train_dataset)
-
+        
+        if callback is not None:
+            callback(net, loss.item(), epoch)
+            
         with torch.no_grad():
             for z_all in data_loader_eval:
                 z_all = tuple_to_device(z_all, params.device)
@@ -314,7 +277,7 @@ def train_network(
                 wandb.log(
                     {
                         "training_loss": training_loss,
-                        "validation loss": loss_eval.item(),
+                        "validation3 loss": loss_eval.item(),
                     },
                     step=epoch,
                 )
@@ -326,12 +289,13 @@ def train_network(
 
 
 def train_network_sampling(
-    net: nn.Module, params: TrainParams, sample_fn, loss_fn, split=True
-):
+    net: nn.Module, params: TrainParams, sample_fn, loss_fn,
+    callback):
     """
     A variant of train_network that does not use a dataset but a random sampling
     function. The sampling function should have the signature
     sample_fn(batch_size) and return (batch_size, dim_data).
+    callback: should have signature callback(net, loss, epoch)
     """
     if params.wandb_params.enabled:
         if params.wandb_params.dir is not None and not os.path.exists(
@@ -362,6 +326,9 @@ def train_network_sampling(
         loss.backward()
         optimizer.step()
         scheduler.step()
+        
+        if callback is not None:
+            callback(net, loss.item(), epoch)        
 
         loss_eval = loss.clone().detach()
         loss_lst[epoch] = loss_eval.item()
@@ -404,3 +371,105 @@ def save_module(nn_module: torch.nn.Module, filename: str):
     if not os.path.exists(file_dir):
         os.makedirs(file_dir, exist_ok=True)
     torch.save(nn_module.state_dict(), filename)
+
+def tensor_linspace(start, end, steps=10):
+    # linspace in torch, adopted from https://github.com/zhaobozb/layout2im.
+    """
+    Vectorized version of torch.linspace.
+    Inputs:
+    - start: Tensor of any shape
+    - end: Tensor of the same shape as start
+    - steps: Integer
+    Returns:
+    - out: Tensor of shape start.size() + (steps,), such that
+      out.select(-1, 0) == start, out.select(-1, -1) == end,
+      and the other elements of out linearly interpolate between
+      start and end.
+    """
+    assert start.size() == end.size()
+    view_size = start.size() + (1,)
+    w_size = (1,) * start.dim() + (steps,)
+    out_size = start.size() + (steps,)
+
+    start_w = torch.linspace(1, 0, steps=steps).to(start)
+    start_w = start_w.view(w_size).expand(out_size)
+    end_w = torch.linspace(0, 1, steps=steps).to(start)
+    end_w = end_w.view(w_size).expand(out_size)
+
+    start = start.contiguous().view(view_size).expand(out_size)
+    end = end.contiguous().view(view_size).expand(out_size)
+
+    out = start_w * start + end_w * end
+    return out.to(start.device)
+
+
+class MLPwEmbedding(torch.nn.Module):
+    """
+    Train an MLP with Embedding.
+    hidden_layers takes a list of hidden layers, 
+    and S takes a positive integer value that corresponds to number of tokens.
+    For example,
+
+    MLP(dim_in=3, dim_out=5, S=10, nn_layers=[128, 128])
+
+    creates a MLP with two hidden layers with 128 width.
+    
+    The architecture choice the MLPwEmbedding assumes that all the 
+    nn layers are of equal size.
+    """
+    def __init__(
+        self,
+        dim_in: int,
+        dim_out: int,
+        hidden_layers: List[int],
+        embedding_size: int, # number of tokens
+        activation: nn.Module = nn.ELU(),
+    ):
+        super().__init__()
+
+        self.dim_in = dim_in
+        self.dim_out = dim_out
+        self.embedding_size = embedding_size
+        self.hidden_layers = hidden_layers
+        self.act = activation
+        
+        # assert all elements of hideen layers are equal.
+        if len(set(hidden_layers)) != 1:
+            raise ValueError("hidden_layers must have same elements.")
+
+        self.initial = nn.Linear(dim_in, hidden_layers[0])
+        self.embed = nn.Embedding(embedding_size, hidden_layers[0])
+        self.final = nn.Linear(hidden_layers[-1], dim_out)
+
+        self.layers = []
+        for i in range(len(hidden_layers)-1):
+            self.layers.append(LinearBlock(hidden_layers[i], hidden_layers[i+1]))
+        self.hl = nn.Sequential(*self.layers)
+
+    def forward(self, x: torch.Tensor, s: torch.int) -> torch.Tensor:
+        s = torch.Tensor([s]).type(torch.int).to(x.device)
+        x = self.initial(x)
+        x = self.act(x)
+        for i in range(len(self.hidden_layers) - 1):
+            x = self.layers[i](x, self.embed(s))
+        x = self.final(x)
+        return x
+
+
+class LinearBlock(torch.nn.Module):
+    def __init__(self, dim_in, dim_out, activation=nn.ELU()):
+        super().__init__()
+        self.linear = nn.Linear(dim_in, dim_out)
+        self.act = activation
+        self.layernorm = nn.LayerNorm(dim_out)
+        
+    def forward(self, x, y):
+        x = self.linear(x) * y
+        x = self.layernorm(x)
+        x = self.act(x)
+        return x
+
+def generate_cosine_schedule(sigma_max, sigma_min, steps):
+    # normalize space between 0 to 1.
+    x = 0.5 * (torch.cos(torch.linspace(0, torch.pi, steps)) + 1)
+    return (sigma_max - sigma_min) * x + sigma_min

@@ -16,7 +16,7 @@ from score_po.dynamical_system import DynamicalSystem
 from score_po.costs import QuadraticCost
 from score_po.policy import NNPolicy, TimeVaryingOpenLoopPolicy
 from score_po.nn import MLP
-from score_po.score_matching import ScoreEstimator
+from score_po.score_matching import ScoreEstimatorXu
 
 from examples.light_dark.dynamics import SingleIntegrator
 
@@ -42,9 +42,9 @@ def main(cfg: DictConfig):
 
     # 5. Set up score optimizer.
     network = MLP(4, 4, [128, 128, 128])
-    sf = ScoreEstimator(2, 2, network)
+    sf = ScoreEstimatorXu(2, 2, network)
 
-    sf.load_state_dict(
+    sf.net.load_state_dict(
         torch.load(
             os.path.join(
                 get_original_cwd(), "examples/light_dark/weights/checkpoint.pth"

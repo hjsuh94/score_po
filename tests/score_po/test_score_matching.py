@@ -9,50 +9,66 @@ import score_po.score_matching as mut
 from score_po.nn import MLP, TrainParams, Normalizer
 
 
-class TestScoreEstimator:
+class TestScoreEstimatorXu:
     def test_constructor(self):
         network = MLP(5, 5, [128, 128])
 
         with np.testing.assert_raises(ValueError):
-            mut.ScoreEstimator(2, 2, network)
+            mut.ScoreEstimatorXu(2, 2, network)
         with np.testing.assert_raises(ValueError):
-            mut.ScoreEstimator(4, 2, network)
+            mut.ScoreEstimatorXu(4, 2, network)
 
         # Doesn't throw since 3 + 2 = 5.
-        sf = mut.ScoreEstimator(3, 2, network)
+        sf = mut.ScoreEstimatorXu(3, 2, network)
 
     def test_constructor_with_normalizer(self):
         network = MLP(5, 5, [128, 128])
 
-        sf = mut.ScoreEstimator(
+        sf = mut.ScoreEstimatorXu(
             3,
             2,
             network,
-            z_normalizer=Normalizer(
-                k=torch.tensor([1, 2.0, 3.0, 4.0, 5]),
-                b=torch.tensor([0, 0.5, 1, 1.5, 2]),
+            x_normalizer=Normalizer(
+                k=torch.tensor([1, 2.0, 3.0]),
+                b=torch.tensor([0, 0.5, 1]),
             ),
+            u_normalizer=Normalizer(
+                k=torch.tensor([4.0, 5]),
+                b=torch.Tensor([1.5, 2])
+            )
         )
 
     @pytest.mark.parametrize("device", ("cpu", "cuda"))
     @pytest.mark.parametrize(
-        "z_normalizer",
+        "x_normalizer",
         (
             None,
-            Normalizer(k=torch.tensor([2.0, 3.0, 4.0]), b=torch.tensor([-1, -2, -3.0])),
-        ),
+            Normalizer(k=torch.tensor([2.0, 3.0]), b=torch.tensor([-1, -2])),
+        )
     )
-    def test_score_eval(self, device: Literal["cpu", "cuda"], z_normalizer):
+    @pytest.mark.parametrize(
+        "u_normalizer",
+        (
+            None,
+            Normalizer(k=torch.tensor([4.0]), b=torch.tensor([-3.0])),
+        )
+    )    
+    def test_score_eval(self, device: Literal["cpu", "cuda"], x_normalizer, u_normalizer):
         x_tensor = torch.rand(100, 2).to(device)
         u_tensor = torch.rand(100, 1).to(device)
         z_tensor = torch.cat((x_tensor, u_tensor), dim=1)
 
         network = MLP(3, 3, [128, 128])
-        sf = mut.ScoreEstimator(2, 1, network, z_normalizer)
-
+        sf = mut.ScoreEstimatorXu(2, 1, network, x_normalizer, u_normalizer)
+        
+        z_normalized = torch.cat((
+            sf.x_normalizer.to(device)(x_tensor),
+            sf.u_normalizer.to(device)(u_tensor)
+        ), dim=1)
+        
         score_z_expected = (
-            network.to(device)(sf.z_normalizer.to(device)(z_tensor))
-            / sf.z_normalizer.to(device).k
+            network.to(device)(z_normalized)
+            / torch.cat((sf.x_normalizer.to(device).k, sf.u_normalizer.to(device).k))
         )
         np.testing.assert_allclose(
             sf.get_score_z_given_z(z_tensor).cpu().detach().numpy(),
@@ -62,39 +78,119 @@ class TestScoreEstimator:
         np.testing.assert_equal(
             sf.get_score_z_given_z(z_tensor).shape, torch.Size([100, 3])
         )
-        np.testing.assert_equal(
-            sf.get_score_x_given_z(z_tensor).shape, torch.Size([100, 2])
-        )
-        np.testing.assert_equal(
-            sf.get_score_u_given_z(z_tensor).shape, torch.Size([100, 1])
-        )
-        np.testing.assert_equal(
-            sf.get_score_z_given_xu(x_tensor, u_tensor).shape, torch.Size([100, 3])
-        )
-        print(sf.get_score_x_given_xu(x_tensor, u_tensor).shape)
-        np.testing.assert_equal(
-            sf.get_score_x_given_xu(x_tensor, u_tensor).shape, torch.Size([100, 2])
-        )
-        np.testing.assert_equal(
-            sf.get_score_u_given_xu(x_tensor, u_tensor).shape, torch.Size([100, 1])
-        )
 
     @pytest.mark.parametrize("device", ("cpu", "cuda"))
     def test_train(self, device: Literal["cpu", "cuda"]):
         # Generate random data.
 
         network = MLP(5, 5, [128, 128])
-        sf = mut.ScoreEstimator(3, 2, network)
+        sf = mut.ScoreEstimatorXu(3, 2, network)
 
         params = TrainParams()
         with initialize(config_path="./config"):
             cfg = compose(config_name="train_params")
             params.load_from_config(cfg)
 
-        data_tensor = torch.rand(100, 5)
-        dataset = torch.utils.data.TensorDataset(data_tensor)
-        sf.train_network(dataset, params, 0.1, split=False)
-        sf.train_network(dataset, params, 0.3, split=True)
+        x_tensor = torch.rand(100, 3)
+        u_tensor = torch.rand(100, 2)
+        dataset = torch.utils.data.TensorDataset(x_tensor, u_tensor)
+        sf.train_network(dataset, params, 0.1 * torch.ones(1), split=False)
+        sf.train_network(dataset, params, 0.3 * torch.ones(1), split=True)
+
+
+class TestScoreEstimatorXux:
+    def test_constructor(self):
+        network = MLP(8, 8, [128, 128])
+
+        with np.testing.assert_raises(ValueError):
+            mut.ScoreEstimatorXux(2, 2, network)
+        with np.testing.assert_raises(ValueError):
+            mut.ScoreEstimatorXux(2, 3, network)
+
+        # Doesn't throw since 3 + 2 + 3 = 8.
+        sf = mut.ScoreEstimatorXux(3, 2, network)
+
+    def test_constructor_with_normalizer(self):
+        network = MLP(8, 8, [128, 128])
+
+        sf = mut.ScoreEstimatorXux(
+            3,
+            2,
+            network,
+            x_normalizer=Normalizer(
+                k=torch.tensor([1, 2.0, 3.0]),
+                b=torch.tensor([0, 0.5, 1]),
+            ),
+            u_normalizer=Normalizer(
+                k=torch.tensor([4.0, 5]),
+                b=torch.Tensor([1.5, 2])
+            )
+        )
+
+    @pytest.mark.parametrize("device", ("cpu", "cuda"))
+    @pytest.mark.parametrize(
+        "x_normalizer",
+        (
+            None,
+            Normalizer(k=torch.tensor([2.0, 3.0]), b=torch.tensor([-1, -2])),
+        )
+    )
+    @pytest.mark.parametrize(
+        "u_normalizer",
+        (
+            None,
+            Normalizer(k=torch.tensor([4.0]), b=torch.tensor([-3.0])),
+        )
+    )    
+    def test_score_eval(self, device: Literal["cpu", "cuda"], x_normalizer, u_normalizer):
+        x_tensor = torch.rand(100, 2).to(device)
+        u_tensor = torch.rand(100, 1).to(device)
+        xnext_tensor = torch.rand(100, 2).to(device)
+        
+        z_tensor = torch.cat((x_tensor, u_tensor, xnext_tensor), dim=1)
+
+        network = MLP(5, 5, [128, 128])
+        sf = mut.ScoreEstimatorXux(2, 1, network, x_normalizer, u_normalizer)
+        
+        z_normalized = torch.cat((
+            sf.x_normalizer.to(device)(x_tensor),
+            sf.u_normalizer.to(device)(u_tensor),
+            sf.x_normalizer.to(device)(xnext_tensor),            
+        ), dim=1)
+        
+        score_z_expected = (
+            network.to(device)(z_normalized)
+            / torch.cat(
+                (sf.x_normalizer.to(device).k, sf.u_normalizer.to(device).k,
+                 sf.x_normalizer.to(device).k))
+        )
+        np.testing.assert_allclose(
+            sf.get_score_z_given_z(z_tensor).cpu().detach().numpy(),
+            score_z_expected.cpu().detach().numpy(),
+        )
+
+        np.testing.assert_equal(
+            sf.get_score_z_given_z(z_tensor).shape, torch.Size([100, 5])
+        )
+
+    @pytest.mark.parametrize("device", ("cpu", "cuda"))
+    def test_train(self, device: Literal["cpu", "cuda"]):
+        # Generate random data.
+
+        network = MLP(8, 8, [128, 128])
+        sf = mut.ScoreEstimatorXux(3, 2, network)
+
+        params = TrainParams()
+        with initialize(config_path="./config"):
+            cfg = compose(config_name="train_params")
+            params.load_from_config(cfg)
+
+        x_tensor = torch.rand(100, 3)
+        u_tensor = torch.rand(100, 2)
+        xnext_tensor = torch.rand(100, 3)
+        dataset = torch.utils.data.TensorDataset(x_tensor, u_tensor, xnext_tensor)
+        sf.train_network(dataset, params, 0.1 * torch.ones(1), split=False)
+        sf.train_network(dataset, params, 0.3 * torch.ones(1), split=True)
 
 
 class GaussianScore(torch.nn.Module):

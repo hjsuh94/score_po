@@ -1,35 +1,35 @@
 defaults:
   - user: hongkai
+  - plant_param: param1
 
 hydra:
   run:
     dir: ${user.run_dir}
+  sweep:
+    dir: ${user.run_dir}
 
 device: "cuda"
 seed: 123
-nn_plant:
-  dt: 0.05
-  hidden_layers: [64, 64, 32]
-  u_max: 80
 
-policy:
+single_shooting: True
+
+trj:
   wandb:
     enabled: ${user.wandb_enabled}
     project: score_po
     dir: ${user.run_dir}
     name: ${now:%Y.%m.%d-%H.%M.%S}_cartpole_swingup
     entity: ${user.wandb_entity}
-  T: 20
-  x0_upper: [0, 0, 0, 0]
-  x0_lower: [0, 0, 0, 0]
-  batch_size: 1
+  T: 60
   std: 0.
   lr: 1e-2
-  max_iters: 10000
-  save_best_model: ${user.save_swingup_policy}
+  max_iters: 20000
+  save_best_model: ${user.save_swingup_trj}
   device: "cuda"
-  load_ckpt: ${user.load_swingup_policy}
-  beta: 10
+  load_ckpt: ${user.load_swingup_trj}
+  saving_period: null
+  beta: 0.1
 
 dynamics_load_ckpt: ${user.dynamics_load_ckpt}
-score_estimator_load_ckpt: ${user.score_estimator_load_ckpt}
+score_estimator_xu_load_ckpt: ${user.score_estimator_xu_load_ckpt}
+score_estimator_xux_load_ckpt: ${user.score_estimator_xux_load_ckpt}

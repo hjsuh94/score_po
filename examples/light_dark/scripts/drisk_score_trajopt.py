@@ -16,7 +16,7 @@ from score_po.dynamical_system import DynamicalSystem
 from score_po.costs import QuadraticCost
 from score_po.policy import NNPolicy, TimeVaryingOpenLoopPolicy
 from score_po.nn import MLP
-from score_po.score_matching import ScoreEstimator
+from score_po.score_matching import ScoreEstimatorXu
 
 from examples.light_dark.dynamics import SingleIntegrator
 
@@ -41,8 +41,8 @@ def main(cfg: DictConfig):
 
     # 5. Set up score optimizer.
     network = MLP(4, 4, [128, 128, 128])
-    sf = ScoreEstimator(2, 2, network)
-    sf.load_state_dict(
+    sf = ScoreEstimatorXu(2, 2, network)
+    sf.net.load_state_dict(
         torch.load(
             os.path.join(
                 get_original_cwd(), "examples/light_dark/weights/checkpoint.pth"
@@ -53,6 +53,7 @@ def main(cfg: DictConfig):
 
     # 5. Load rest of the parameters.
     params.load_from_config(cfg)
+    params.to_device(cfg.policy.device)
 
     # 6. Run the optimizer.
     optimizer = DRiskScorePolicyOptimizer(params)
@@ -69,6 +70,7 @@ def main(cfg: DictConfig):
         plt.plot(x_trj[b, :, 0], x_trj[b, :, 1], "springgreen")
     circle = plt.Circle((0, 0), 0.4, fill=False)
     plt.gca().add_patch(circle)
+    plt.axis("equal")
 
     plt.savefig("drisk_trajopt.png")
     plt.close()

@@ -26,7 +26,7 @@ class Cost(torch.nn.Module):
         output:
             cost of scalar.
         """
-        raise ValueError("virtual function.")
+        return self.get_running_cost_batch(x.unsqueeze(0), u.unsqueeze(0)).squeeze(0)
 
     def get_running_cost_batch(self, x_batch, u_batch):
         """
@@ -46,7 +46,7 @@ class Cost(torch.nn.Module):
         output:
             cost of shape scalar.
         """
-        raise ValueError("virtual function.")
+        return self.get_terminal_cost_batch(x.unsqueeze(0)).squeeze(0)
 
     def get_terminal_cost_batch(self, x_batch):
         """
@@ -79,7 +79,6 @@ class QuadraticCost(Cost):
         self.register_buffer("xd", xd)  # desired state
 
     def get_running_cost(self, x, u):
-        self.params_to_device(x.device)
         xQx = torch.einsum("i,ij,j", x - self.xd, self.Q, x - self.xd)
         uRu = torch.einsum("i,ij,j", u, self.R, u)
         return xQx + uRu
@@ -90,7 +89,7 @@ class QuadraticCost(Cost):
         return xQx + uRu
 
     def get_terminal_cost(self, x):
-        return torch.einsum("i,ij,j", x, self.Qd, x)
+        return torch.einsum("i,ij,j", x - self.xd, self.Qd, x - self.xd)
 
     def get_terminal_cost_batch(self, x_batch):
         return torch.einsum(

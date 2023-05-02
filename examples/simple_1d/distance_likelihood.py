@@ -9,8 +9,8 @@ import torch.optim as optim
 from torch.utils.data import TensorDataset
 from tqdm import tqdm
 
-from score_po.data_distance import DataDistance, DataDistanceEstimator
-from score_po.score_matching import ScoreEstimator
+from score_po.data_distance import DataDistance, DataDistanceEstimatorXu
+from score_po.score_matching import ScoreEstimatorXu
 from score_po.nn import MLP, TrainParams
 
 # Does score matching actually give me gradients of the perturbed distribution?
@@ -38,18 +38,20 @@ def get_dist_and_grads(x, data, sigma, cfg):
 
 
 def get_score(x, data, sigma, cfg):
-    x_tensor = torch.Tensor(x)
+    x_tensor = torch.Tensor(x).to(cfg.device)
 
     # Score match.
     network = MLP(1, 1, cfg.nn_layers)
-    sf = ScoreEstimator(1, 0, network)
+    sf = ScoreEstimatorXu(1, 0, network)
+    sf.to(cfg.device)
     params = TrainParams()
     params.load_from_config(cfg)
 
-    data_tensor = torch.Tensor(data).reshape(-1, 1)
-
-    dataset = torch.utils.data.TensorDataset(data_tensor)
-    sf.train_network(dataset, params, sigma, split=False)
+    data_x = torch.Tensor(data).reshape(-1, 1)
+    data_u = torch.zeros(data_x.shape[0], 0)
+    
+    dataset = torch.utils.data.TensorDataset(data_x, data_u)
+    sf.train_network(dataset, params, torch.Tensor([sigma]), split=False)
 
     return sf.get_score_z_given_z(x_tensor.reshape(-1, 1)).detach().cpu().numpy()
 
@@ -62,14 +64,14 @@ def get_learned_dist(x, data, sigma, cfg):
     metric = torch.ones(1) / (sigma**2.0)
 
     network = MLP(1, 1, cfg.nn_layers)
-    dde = DataDistanceEstimator(
-        1, network, metric, torch.ones(1) * -3, torch.ones(1) * 3
+    dde = DataDistanceEstimatorXu(
+        1, 0, network, torch.ones(1) * -3, torch.ones(1) * 3
     )
 
     params = TrainParams()
     params.load_from_config(cfg)
 
-    dde.train_network(dataset, params)
+    dde.train_network(dataset, params, metric)
     z = dde.get_energy_to_data(x_tensor).detach().numpy()
     grads = dde.get_energy_gradients(x_tensor).detach().numpy()
     return z, grads

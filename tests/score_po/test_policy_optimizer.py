@@ -16,7 +16,7 @@ from score_po.policy import (
 )
 from score_po.dynamical_system import DynamicalSystem, NNDynamicalSystem
 from score_po.nn import MLP
-from score_po.score_matching import ScoreEstimator
+from score_po.score_matching import ScoreEstimatorXu
 
 
 class TestPolicyConfig:
@@ -157,7 +157,7 @@ class TestPolicyOptimizerNNDynamics:
         costs = QuadraticCost()
         costs.load_from_config(cfg)
 
-        network = MLP(4, 2, [128, 128])
+        network = MLP(4, 2, [128, 128, 128])
         dynamics = NNDynamicalSystem(2, 2, network)
         dynamics.load_state_dict(torch.load("tests/score_po/weights/dynamics.pth"))
 
@@ -218,12 +218,12 @@ class TestDRiskScoreOptimizer:
         costs = QuadraticCost()
         costs.load_from_config(cfg)
 
-        network = MLP(4, 2, [128, 128])
+        network = MLP(4, 2, [128, 128, 128])
         dynamics = NNDynamicalSystem(2, 2, network)
         dynamics.load_state_dict(torch.load("tests/score_po/weights/dynamics.pth"))
 
-        score_network = MLP(4, 4, [512])
-        sf = ScoreEstimator(2, 2, score_network)
+        score_network = MLP(4, 4, [128, 128, 128])
+        sf = ScoreEstimatorXu(2, 2, score_network)
         sf.load_state_dict(torch.load("tests/score_po/weights/sf_weights.pth"))
 
         params = mut.DRiskScorePolicyOptimizerParams()
@@ -277,3 +277,6 @@ class TestDRiskScoreOptimizer:
 
         optimizer = mut.DRiskScorePolicyOptimizer(params)
         optimizer.iterate()
+
+a = TestDRiskScoreOptimizer()
+a.test_nn_policy("cpu", True)

@@ -57,6 +57,9 @@ class Policy(nn.Module):
         self.dim_u = dim_u
         self.dim_params = 0
         self.params = 0
+        # flag for whether the policy is time-varying, used for 
+        # whether to batch-compute or not.
+        self.tv = True 
         self.u_clip: Clamper = (
             Clamper(lower=None, upper=None, method=Clamper.Method.HARD)
             if u_clip is None
@@ -84,6 +87,7 @@ class TimeVaryingOpenLoopPolicy(Policy):
         self.T = T
         self.dim_params = self.dim_u * self.T
         self.params = nn.Parameter(torch.zeros((T, self.dim_u)))
+        self.tv = True        
 
     def _unclipped_u(self, x_batch, t):
         return self.params[t, :].repeat([x_batch.shape[0], 1]).to(x_batch.device)
@@ -105,6 +109,7 @@ class TimeVaryingStateFeedbackPolicy(Policy):
                 "bias": nn.Parameter(torch.zeros(T, self.dim_u)),
             }
         )
+        self.tv = True
 
     def _unclipped_u(self, x_batch, t):
         self.params = self.params.to(x_batch.device)
@@ -125,7 +130,7 @@ class NNPolicy(Policy):
         self.dim_u = dim_u
         self.net = network
         assert isinstance(self.net, nn.Module)
-        self.dim_params = len(self.net.get_vectorized_parameters())
+        self.tv = False
 
     def _unclipped_u(self, x_batch, t):
         self.net = self.net.to(x_batch.device)

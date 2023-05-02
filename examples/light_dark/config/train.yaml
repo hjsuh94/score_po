@@ -5,21 +5,21 @@ hydra:
   run:
     dir: ${user.run_dir}
 
-nn_layers: [128, 128, 128]
-dataset_size: 10000
+nn_layers: [512, 512, 512, 512]
+dataset_size: 100000
 
 train:
   wandb:
     enabled: ${user.wandb_enabled}
     project: score_po
     dir: ${user.run_dir}
-    name: ${now:%Y.%m.%d-%H.%M.%S}_cartpole
+    name: ${now:%Y.%m.%d-%H.%M.%S}_light_dark
     entity: ${user.wandb_entity}
   adam:
     lr: 1e-3
-    epochs: 100
+    epochs: 500
     batch_size: 1024
   dataset_split: [0.99, 0.01]
-  save_best_model: checkpoint/checkpoint.pth
+  save_best_model: ncsn_xux.pth
   load_ckpt: null
   device: "cuda"

@@ -1,0 +1,51 @@
+defaults:
+  - user: hongkai
+
+
+hydra:
+  run:
+    dir: ${user.run_dir}
+  sweep:
+    dir: ${user.run_dir}
+
+device: "cuda"
+seed: 123
+
+train:
+  wandb:
+    enabled: ${user.wandb_enabled}
+    project: score_po
+    name: ${now:%Y.%m.%d-%H.%M.%S}_circle
+    dir: ${user.run_dir}
+    entity: ${user.wandb_entity}
+  adam:
+    lr: 1e-3
+    epochs: 100
+    batch_size: 2048
+  dataset_split: [0.8, 0.2]
+  save_best_model: ${user.save_score_ckpt}
+  device: ${device}
+
+radius: 3
+
+noise_conditioned: True
+
+# Fixed sigma, for ScoreEstimatorXu
+sigma: 0.05
+
+# NoiseConditionedScoreEstimatorXu
+sigma_max: 0.2
+sigma_min: 0.01
+sigma_steps: 10
+
+langevin_epsilon: 0.1
+langevin_steps: 50 
+
+generate_data: True
+load_samples: ${user.load_samples}
+
+train_score: True
+save_samples: samples.pth
+load_score: ${user.load_score}
+
+sample_size: 10000

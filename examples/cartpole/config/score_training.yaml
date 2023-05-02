@@ -1,8 +1,11 @@
 defaults:
   - user: hongkai
+  - plant_param: param1
 
 hydra:
   run:
+    dir: ${user.run_dir}
+  sweep:
     dir: ${user.run_dir}
 
 device: "cuda"
@@ -25,3 +28,5 @@ train:
   dataset_split: [0.8, 0.2]
   save_best_model: ${user.save_score_ckpt}
   device: "cuda"
+  sigma: 0.01
+  xu: True

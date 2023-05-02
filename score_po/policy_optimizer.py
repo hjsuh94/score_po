@@ -8,7 +8,7 @@ import torch
 import matplotlib.pyplot as plt
 import wandb
 
-from score_po.score_matching import ScoreEstimator
+from score_po.score_matching import ScoreEstimatorXu
 from score_po.costs import Cost
 from score_po.dynamical_system import DynamicalSystem
 from score_po.policy import Policy
@@ -58,7 +58,7 @@ class PolicyOptimizerParams:
 
     def to_device(self, device):
         self.cost.to(device)
-        self.policy = self.policy.to(self.device)
+        self.policy.to(device)
         if isinstance(self.dynamical_system, torch.nn.Module):
             self.dynamical_system.to(device)
         self.x0_upper = self.x0_upper.to(device)
@@ -215,13 +215,17 @@ class PolicyOptimizer:
             self.evaluate_cost_batch(x0_batch, zero_noise_trj).clone().detach()
         )
         
-        u_trj_batch = torch.zeros((B, 0, self.ds.dim_u)).to(self.params.device)      
-        for t in range(self.params.T):
-            u_t_batch = self.policy(x_trj_batch[:, t, :], t)
-            u_trj_batch = torch.hstack((u_trj_batch, u_t_batch[:, None, :]))
+        if self.policy.tv:
+            u_trj_batch = torch.zeros((B, self.params.T, self.ds.dim_u)).to(self.params.device)
+            for t in range(self.params.T):
+                u_trj_batch[:, t, :] = self.policy(x_trj_batch[:, t, :], t)
+
+        else:
+            u_trj_batch = self.policy(x_trj_batch[:, :self.params.T, :].reshape(
+                (B * self.params.T, self.ds.dim_x)), None)
+            u_trj_batch = u_trj_batch.reshape(B, self.params.T, self.ds.dim_u)
 
         # 2. Compute zeroth-order loss
-        # We subtract u_trj_batch - noise_trj_batch to obtain \pi(x_it, theta).
         jcb_sum = torch.einsum(
             "btu,btu->b", u_trj_batch, noise_trj_batch
         )
@@ -243,7 +247,7 @@ class PolicyOptimizer:
             if self.params.wandb_params.dir is not None and not os.path.exists(
                 self.params.wandb_params.dir
             ):
-                self.os.makedirs(self.params.wandb_params.dir, exist_ok=True)
+                os.makedirs(self.params.wandb_params.dir, exist_ok=True)
             wandb.init(
                 project=self.params.wandb_params.project,
                 name=self.params.wandb_params.name,
@@ -279,6 +283,7 @@ class PolicyOptimizer:
             noise_trj_batch = self.sample_noise_trj_batch()
             loss = self.evaluate_policy_loss(x0_batch, noise_trj_batch)
             loss.backward()
+            torch.nn.utils.clip_grad_norm_(self.policy.parameters(), 0.5 * self.params.T)
             optimizer.step()
 
             cost = torch.mean(self.evaluate_cost_batch(x0_batch, zero_noise_trj))
@@ -315,7 +320,7 @@ class PolicyOptimizer:
 @dataclass
 class DRiskScorePolicyOptimizerParams(PolicyOptimizerParams):
     beta: float = 1.0
-    sf: ScoreEstimator = None
+    sf: ScoreEstimatorXu = None
 
     def __init__(self):
         super().__init__()
@@ -323,6 +328,10 @@ class DRiskScorePolicyOptimizerParams(PolicyOptimizerParams):
     def load_from_config(self, cfg: DictConfig):
         super().load_from_config(cfg)
         self.beta = cfg.policy.beta
+        
+    def to_device(self, device):
+        super().to_device(device)
+        self.sf.to(device)
 
 
 class DRiskScorePolicyOptimizer(PolicyOptimizer):
@@ -330,6 +339,9 @@ class DRiskScorePolicyOptimizer(PolicyOptimizer):
         super().__init__(params=params, **kwargs)
         self.beta = params.beta
         self.sf = params.sf
+        if not isinstance(self.sf, ScoreEstimatorXu):
+            raise TypeError(
+                "DRiskScorePolicyOptimizer only accepts ScoreEstimatorXu.")
 
     def evaluate_score_loss(self, x0_batch, noise_trj_batch):
         """
@@ -344,14 +356,10 @@ class DRiskScorePolicyOptimizer(PolicyOptimizer):
 
         x_trj_batch, u_trj_batch = self.rollout_policy_batch(x0_batch, noise_trj_batch)
         z_trj_batch = torch.cat((x_trj_batch[:, :-1, :], u_trj_batch), dim=2)
-
-        sz_trj_batch = torch.zeros(B, self.params.T, self.ds.dim_x + self.ds.dim_u).to(
-            self.params.device
-        )
-
-        for t in range(self.params.T):
-            zt_batch = z_trj_batch[:, t, :]
-            sz_trj_batch[:, t, :] = self.sf.get_score_z_given_z(zt_batch)
+        
+        sz_trj_batch = self.sf.get_score_z_given_z(z_trj_batch.reshape(
+            (B * self.params.T, self.ds.dim_x + self.ds.dim_u)))
+        sz_trj_batch = sz_trj_batch.reshape(B, self.params.T, self.ds.dim_x + self.ds.dim_u)
 
         # Here, ∇_z log p(z) is detached from the computation graph so that we ignore
         # terms related to ∂(∇_z log p(z))/∂θ.

@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 import os
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Union
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -20,6 +20,7 @@ from score_po.nn import (
     train_network,
     Normalizer,
     save_module,
+    MLPwEmbedding,
 )
 
 """
@@ -27,22 +28,25 @@ Classes for training score functions.
 """
 
 
-class ScoreEstimator(torch.nn.Module):
+class ScoreEstimatorXu(torch.nn.Module):
     """
     Score function estimator that stores the object
     ∇_z log p(z): R^(dim_x + dim_u) -> R^(dim_x + dim_u), where
     z = [x, u]^T. The class has functionalities for:
-    1. Returning ∇_z log p(z), ∇_x log p(x,u), ∇_u log p(x,u)
+    1. Returning ∇_z log p(z)
     2. Training the estimator from existing data of (x,u) pairs.
 
     Note that this score estimator trains for a single noise-level
     without being conditioned on noise.
-
-    TODO: make this ScoreEstimator a torch.nn.Module
     """
 
     def __init__(
-        self, dim_x, dim_u, network, z_normalizer: Optional[Normalizer] = None
+        self,
+        dim_x,
+        dim_u,
+        network,
+        x_normalizer: Normalizer = None,
+        u_normalizer: Normalizer = None,
     ):
         """
         We denote z̅ as z after normalization, namely
@@ -60,12 +64,17 @@ class ScoreEstimator(torch.nn.Module):
         self.dim_x = dim_x
         self.dim_u = dim_u
         self.net = network
-        self.sigma = 0.1
-        self.z_normalizer: Normalizer = (
-            Normalizer(k=torch.ones(dim_x + dim_u), b=torch.zeros(dim_x + dim_u))
-            if z_normalizer is None
-            else z_normalizer
+        self.x_normalizer: Normalizer = (
+            Normalizer(k=torch.ones(dim_x), b=torch.zeros(dim_x))
+            if x_normalizer is None
+            else x_normalizer
         )
+        self.u_normalizer: Normalizer = (
+            Normalizer(k=torch.ones(dim_u), b=torch.zeros(dim_u))
+            if u_normalizer is None
+            else u_normalizer
+        )
+        self.register_buffer("sigma", torch.ones(1))
         self.check_input_consistency()
 
     def check_input_consistency(self):
@@ -78,18 +87,32 @@ class ScoreEstimator(torch.nn.Module):
         ):
             raise ValueError("Inconsistent output size of neural network.")
 
-    def _get_score_zbar_given_zbar(self, zbar, eval=True):
+    def get_xu_from_z(self, z):
+        x = z[:, : self.dim_x]
+        u = z[:, self.dim_x :]
+        return x, u
+
+    def get_z_from_xu(self, x, u):
+        return torch.cat((x, u), dim=1)
+
+    def normalize_z(self, z):
+        """
+        Normalize z assuming z = [x,u]
+        """
+        x, u = self.get_xu_from_z(z)
+        xbar = self.x_normalizer(x)
+        ubar = self.u_normalizer(u)
+        zbar = self.get_z_from_xu(xbar, ubar)
+        return zbar
+
+    def _get_score_zbar_given_zbar(self, zbar):
         """
         Compute the score ∇_z̅ log p(z̅) for the normalized z̅
         """
         self.net.to(zbar.device)
-        if eval:
-            self.net.eval()
-        else:
-            self.net.train()
         return self.net(zbar)
 
-    def get_score_z_given_z(self, z, eval=True):
+    def get_score_z_given_z(self, z):
         """
         Compute ∇_z log p(z).
 
@@ -98,35 +121,15 @@ class ScoreEstimator(torch.nn.Module):
         As a result, ∇_z̅ log p(z̅) = ∇_z̅ log p(z) = k * ∇_z log p(z), namely
         ∇_z log p(z) = 1/k * ∇_z̅ log p(z̅)
         """
-        self.z_normalizer.to(z.device)
-        zbar = self.z_normalizer(z)
-        return self._get_score_zbar_given_zbar(zbar, eval) / self.z_normalizer.k
+        zbar = self.normalize_z(z)
+        return self._get_score_zbar_given_zbar(zbar) / torch.cat(
+            (self.x_normalizer.k, self.u_normalizer.k)
+        )
 
-    def forward(self, z, eval=True):
-        return self.get_score_z_given_z(z, eval)
+    def forward(self, z):
+        return self.get_score_z_given_z(z)
 
-    def get_score_x_given_z(self, z, eval=True):
-        """Give ∇_x log p(z) part of the score function."""
-        return self.get_score_z_given_z(z, eval)[:, : self.dim_x]
-
-    def get_score_u_given_z(self, z, eval=True):
-        """Give ∇_u log p(z) part of the score function."""
-        return self.get_score_z_given_z(z, eval)[:, self.dim_x :]
-
-    # The rest of the functions are same except they have x u as arguments.
-    def get_score_z_given_xu(self, x, u, eval=True):
-        z = torch.hstack((x, u))
-        return self.get_score_z_given_z(z, eval)
-
-    def get_score_x_given_xu(self, x, u, eval=True):
-        z = torch.hstack((x, u))
-        return self.get_score_x_given_z(z, eval)
-
-    def get_score_u_given_xu(self, x, u, eval=True):
-        z = torch.hstack((x, u))
-        return self.get_score_u_given_z(z, eval)
-
-    def evaluate_denoising_loss_with_sigma(self, data, sigma):
+    def evaluate_loss(self, x_batch, u_batch, sigma):
         """
         Evaluate denoising loss, Eq.(2) from Song & Ermon 2019.
             data of shape (B, dim_x + dim_u)
@@ -138,11 +141,12 @@ class ScoreEstimator(torch.nn.Module):
         """
 
         # Normalize the data
-        data_normalized = self.z_normalizer.to(data.device)(data)
-        databar = data_normalized + torch.randn_like(data) * sigma
+        z_batch = self.get_z_from_xu(x_batch, u_batch)
+        data_normalized = self.normalize_z(z_batch)
+        databar = data_normalized + torch.randn_like(z_batch) * sigma
 
         target = -1 / (sigma**2) * (databar - data_normalized)
-        scores = self._get_score_zbar_given_zbar(databar, eval=False)
+        scores = self._get_score_zbar_given_zbar(databar)
 
         target = target.view(target.shape[0], -1)
         scores = scores.view(scores.shape[0], -1)
@@ -150,9 +154,133 @@ class ScoreEstimator(torch.nn.Module):
         loss = 0.5 * ((scores - target) ** 2).sum(dim=-1).mean(dim=0)
         return loss
 
-    def evaluate_slicing_loss_with_sigma(self, data, sigma):
+    def train_network(
+        self,
+        dataset: TensorDataset,
+        params: TrainParams,
+        sigma: torch.Tensor,
+        split=True,
+    ):
         """
-        Evaluate denoising loss, Eq.(3) from Song & Ermon 2019.
+        Train a network given a dataset and optimization parameters.
+        """
+        # Retain memory of the noise level.
+        self.sigma = sigma
+        # We assume z_batch is (x_batch, u_batch)
+        loss_fn = lambda z_batch, net: self.evaluate_loss(
+            z_batch[0], z_batch[1], self.sigma
+        )
+        loss_lst = train_network(self, params, dataset, loss_fn, split)
+        return loss_lst
+
+
+class ScoreEstimatorXux(torch.nn.Module):
+    """
+    Score function estimator that stores the object
+    ∇_z log p(z): R^(dim_x + dim_u + dim_x) -> R^(dim_x + dim_u + dim_x), where
+    z = [x, u, xnext]^T. The class has functionalities for:
+    1. Returning ∇_z log p(z)
+    2. Training the estimator from existing data of (x,u, xnext) pairs.
+    """
+
+    def __init__(
+        self,
+        dim_x,
+        dim_u,
+        network,
+        x_normalizer: Normalizer = None,
+        u_normalizer: Normalizer = None,
+    ):
+        """
+        We denote z̅ as z after normalization, namely
+        z̅ = (z - b) / k
+        where k is the normalization constant.
+        The network estimate ∇_z̅ log p(z̅), the score of the normalized ̅z̅, based on
+        which we compute ∇_z log p(z), the score of the un-normalized z.
+
+        Args:
+          network: A network ϕ that outputs ϕ(z̅) ≈ ∇_z̅ log p(z̅), where z̅ is the
+          normalized data.
+          z_normalizer: The normalizer for z.
+        """
+        super().__init__()
+        self.dim_x = dim_x
+        self.dim_u = dim_u
+        self.net = network
+        self.x_normalizer: Normalizer = (
+            Normalizer(k=torch.ones(dim_x), b=torch.zeros(dim_x))
+            if x_normalizer is None
+            else x_normalizer
+        )
+        self.u_normalizer: Normalizer = (
+            Normalizer(k=torch.ones(dim_u), b=torch.zeros(dim_u))
+            if u_normalizer is None
+            else u_normalizer
+        )
+        self.register_buffer("sigma", torch.ones(1))
+        self.check_input_consistency()
+
+    def check_input_consistency(self):
+        if hasattr(self.net, "dim_in") and self.net.dim_in is not (
+            self.dim_x + self.dim_u + self.dim_x
+        ):
+            raise ValueError("Inconsistent input size of neural network.")
+        if hasattr(self.net, "dim_out") and self.net.dim_out is not (
+            self.dim_x + self.dim_u + self.dim_x
+        ):
+            raise ValueError("Inconsistent output size of neural network.")
+
+    def get_xux_from_z(self, z):
+        x = z[:, : self.dim_x]
+        u = z[:, self.dim_x : self.dim_x + self.dim_u]
+        xnext = z[:, self.dim_x + self.dim_u :]
+        return x, u, xnext
+
+    def get_z_from_xux(self, x, u, xnext):
+        return torch.cat((x, u, xnext), dim=1)
+
+    def normalize_z(self, z):
+        """
+        Normalize z assuming z = [x,u]
+        """
+        x, u, xnext = self.get_xux_from_z(z)
+        xbar = self.x_normalizer(x)
+        ubar = self.u_normalizer(u)
+        xnextbar = self.x_normalizer(xnext)
+        zbar = self.get_z_from_xux(xbar, ubar, xnextbar)
+        return zbar
+
+    def _get_score_zbar_given_zbar(self, zbar):
+        """
+        Compute the score ∇_z̅ log p(z̅) for the normalized z̅
+        """
+        self.net.to(zbar.device)
+        if eval:
+            self.net.eval()
+        else:
+            self.net.train()
+        return self.net(zbar)
+
+    def get_score_z_given_z(self, z):
+        """
+        Compute ∇_z log p(z).
+
+        We know that z̅ = (z−b)/k, hence p(z̅) = k*p(z) (based on transforming a
+        continuous-valued random variable), hence log p(z̅) = log k + log p(z).
+        As a result, ∇_z̅ log p(z̅) = ∇_z̅ log p(z) = k * ∇_z log p(z), namely
+        ∇_z log p(z) = 1/k * ∇_z̅ log p(z̅)
+        """
+        zbar = self.normalize_z(z)
+        return self._get_score_zbar_given_zbar(zbar) / torch.cat(
+            (self.x_normalizer.k, self.u_normalizer.k, self.x_normalizer.k)
+        )
+
+    def forward(self, z):
+        return self.get_score_z_given_z(z)
+
+    def evaluate_loss(self, x_batch, u_batch, xnext_batch, sigma):
+        """
+        Evaluate denoising loss, Eq.(2) from Song & Ermon 2019.
             data of shape (B, dim_x + dim_u)
             sigma, a scalar variable.
         Adopted from Song's codebase.
@@ -160,113 +288,14 @@ class ScoreEstimator(torch.nn.Module):
         Args:
           sigma: The noise level in the NORMALIZED z̅ space.
         """
-        data_normalized = self.z_normalizer.to(data.device)(data)
-        databar = data_normalized + torch.randn_like(data) * sigma
-        databar.requires_grad = True
 
-        vectors = torch.randn_like(databar)
+        # Normalize the data
+        z_batch = self.get_z_from_xux(x_batch, u_batch, xnext_batch)
+        data_normalized = self.normalize_z(z_batch)
+        databar = data_normalized + torch.randn_like(z_batch) * sigma
 
-        grad1 = self._get_score_zbar_given_zbar(databar)
-        gradv = torch.sum(grad1 * vectors)
-        grad2 = autograd.grad(gradv, databar, create_graph=True)[0]
-        grad1 = grad1.view(databar.shape[0], -1)
-
-        loss1 = torch.sum(grad1 * grad1, dim=-1) / 2.0
-        loss2 = torch.sum((vectors * grad2).view(databar.shape[0], -1), dim=-1)
-
-        loss1 = loss1.view(1, -1).mean(dim=0)
-        loss2 = loss2.view(1, -1).mean(dim=0)
-        loss = loss1 + loss2
-
-        return loss.mean()
-
-    def evaluate_loss(self, z_batch, sigma, mode):
-        if mode == "denoising":
-            loss = self.evaluate_denoising_loss_with_sigma(z_batch, sigma)
-        elif mode == "slicing":
-            loss = self.evaluate_slicing_loss_with_sigma(z_batch, sigma)
-        else:
-            raise ValueError("Invalid mode. Only supports denoising or slicing.")
-        return loss
-
-    def train_network(
-        self,
-        dataset: TensorDataset,
-        params: TrainParams,
-        sigma,
-        mode="denoising",
-        split=True,
-    ):
-        """
-        Train a network given a dataset and optimization parameters.
-        """
-        # NOTE: We use x_batch[0] here since dataloader gives a tuple (x_batch,).
-        loss_fn = lambda x_batch, net: self.evaluate_loss(x_batch[0], sigma, mode)
-        loss_lst = train_network(self, params, dataset, loss_fn, split)
-        return loss_lst
-
-
-class NoiseConditionedScoreEstimator(ScoreEstimator):
-    """
-    A noise-conditioned score estimator that accepts noise input.
-    """
-
-    def __init__(self, dim_x, dim_u, network):
-        super().__init__(dim_x, dim_u, network)
-
-    def check_input_consistency(self):
-        if self.net.dim_in is not (self.dim_x + self.dim_u + 1):
-            raise ValueError(
-                "Inconsistent input size of neural network. "
-                + "Did you forget to add 1 dimension for noise parameter?"
-            )
-        if self.net.dim_out is not (self.dim_x + self.dim_u):
-            raise ValueError("Inconsistent output size of neural network")
-
-    def get_score_z_given_z(self, z, sigma, eval=True):
-        """
-        input:
-            z of shape (B, dim_x + dim_u)
-            sigma, float
-        output:
-            ∇_z log p(z) of shape (B, dim_x + dim_u)
-        """
-        if eval:
-            self.net.eval()
-
-        input = torch.hstack((z, sigma * torch.ones(z.shape[0], 1).to(z.device)))
-        return self.net(input)
-
-    def get_score_x_given_z(self, z, sigma, eval=True):
-        """Give ∇_x log p(z) part of the score function."""
-        return self.get_score_z_given_z(z, sigma, eval)[:, : self.dim_x]
-
-    def get_score_u_given_z(self, z, sigma, eval=True):
-        """Give ∇_u log p(z) part of the score function."""
-        return self.get_score_z_given_z(z, sigma, eval)[:, self.dim_x :]
-
-    # The rest of the functions are same except they have x u as arguments.
-    def get_score_z_given_xu(self, x, u, sigma, eval=True):
-        z = torch.hstack((x, u))
-        return self.get_score_z_given_z(z, sigma, eval)
-
-    def get_score_x_given_xu(self, x, u, sigma, eval=True):
-        z = torch.hstack((x, u))
-        return self.get_score_x_given_z(z, sigma, eval)
-
-    def get_score_x_given_xu(self, x, u, sigma, eval=True):
-        z = torch.hstack((x, u))
-        return self.get_score_u_given_z(z, sigma, eval)
-
-    def evaluate_denoising_loss_with_sigma(self, data, sigma):
-        """
-        Evaluate denoising loss, Eq.(5) from Song & Ermon.
-            data of shape (B, dim_x + dim_u)
-            sigma, a scalar variable.
-        """
-        databar = data + torch.randn_like(data) * sigma
-        target = -1 / (sigma**2) * (databar - data)
-        scores = self.get_score_z_given_z(databar, sigma, eval=False)
+        target = -1 / (sigma**2) * (databar - data_normalized)
+        scores = self._get_score_zbar_given_zbar(databar)
 
         target = target.view(target.shape[0], -1)
         scores = scores.view(scores.shape[0], -1)
@@ -274,112 +303,199 @@ class NoiseConditionedScoreEstimator(ScoreEstimator):
         loss = 0.5 * ((scores - target) ** 2).sum(dim=-1).mean(dim=0)
         return loss
 
-    def evaluate_slicing_loss_with_sigma(self, data, sigma):
+    def train_network(
+        self,
+        dataset: TensorDataset,
+        params: TrainParams,
+        sigma: torch.Tensor,
+        split=True,
+    ):
         """
-        Evaluate denoising loss, Eq.(5) from Song & Ermon.
+        Train a network given a dataset and optimization parameters.
+        """
+        self.sigma = sigma
+        # We assume z_batch is (x_batch, u_batch, xnext_batch)
+        loss_fn = lambda z_batch, net: self.evaluate_loss(
+            z_batch[0], z_batch[1], z_batch[2], self.sigma
+        )
+        loss_lst = train_network(self, params, dataset, loss_fn, split)
+        return loss_lst
+
+
+class NoiseConditionedScoreEstimatorXu(ScoreEstimatorXu):
+    """
+    Train a noise conditioned score estimator.
+    """
+
+    def __init__(
+        self,
+        dim_x,
+        dim_u,
+        network: MLPwEmbedding,
+        x_normalizer: Normalizer = None,
+        u_normalizer: Normalizer = None,
+    ):
+        super().__init__(dim_x, dim_u, network, x_normalizer, u_normalizer)
+        self.register_buffer("sigma_lst", torch.ones(network.embedding_size))
+
+    def _get_score_zbar_given_zbar(self, zbar, i):
+        """
+        Compute the score ∇_z̅ log p(z̅) for the normalized z̅
+        """
+        return self.net(zbar, i)
+
+    def get_score_z_given_z(self, z, i):
+        """
+        Compute ∇_z log p(z, sigma) where sigma is the noise level.
+        We enter an integer value here as a token for sigma, s.t.
+        self.sigma_lst[i] = sigma.
+        """
+        zbar = self.normalize_z(z)
+        return self._get_score_zbar_given_zbar(zbar, i) / torch.cat(
+            (self.x_normalizer.k, self.u_normalizer.k)
+        )
+
+    def evaluate_loss(self, x_batch, u_batch, i):
+        """
+        Evaluate denoising loss, Eq.(2) from Song & Ermon 2019.
             data of shape (B, dim_x + dim_u)
             sigma, a scalar variable.
+        Adopted from Song's codebase.
+
+        Args:
+          i: index of sigma_lst.
         """
-        databar = data + torch.randn_like(data) * sigma
-        databar.requires_grad_(True)
 
-        vectors = torch.randn_like(databar)
+        sigma = self.sigma_lst[i]
 
-        grad1 = self.get_score_z_given_z(databar, sigma)
-        gradv = torch.sum(grad1 * vectors)
-        grad2 = autograd.grad(gradv, databar, create_graph=True)[0]
-        grad1 = grad1.view(databar.shape[0], -1)
+        # Normalize the data
+        z_batch = self.get_z_from_xu(x_batch, u_batch)
+        data_normalized = self.normalize_z(z_batch)
+        databar = data_normalized + torch.randn_like(z_batch) * sigma
 
-        loss1 = torch.sum(grad1 * grad1, dim=-1) / 2.0
-        loss2 = torch.sum((vectors * grad2).view(databar.shape[0], -1), dim=-1)
+        target = -1 / (sigma**2) * (databar - data_normalized)
+        scores = self._get_score_zbar_given_zbar(databar, i)
 
-        loss1 = loss1.view(1, -1).mean(dim=0)
-        loss2 = loss2.view(1, -1).mean(dim=0)
-        loss = loss1 + loss2
+        target = target.view(target.shape[0], -1)
+        scores = scores.view(scores.shape[0], -1)
 
-        return loss.mean()
-
-    def evaluate_denoising_loss(self, data, sigma_lst):
-        """
-        Evaluate loss given input:
-            data: of shape (B, dim_x + dim_u)
-            sigma_lst: a geometric sequence of sigmas to train on.
-        """
-        loss = torch.zeros(1, device=data.device)
-        for sigma in sigma_lst:
-            loss += sigma**2.0 * self.evaluate_denoising_loss_with_sigma(data, sigma)
-        return loss / len(sigma_lst)
-
-    def evaluate_slicing_loss(self, data, sigma_lst):
-        """
-        Evaluate loss given input:
-            data: of shape (B, dim_x + dim_u)
-            sigma_lst: a geometric sequence of sigmas to train on.
-        """
-        loss = torch.zeros(1, device=data.device)
-        for sigma in sigma_lst:
-            loss += sigma**2.0 * self.evaluate_slicing_loss_with_sigma(data, sigma)
-        return loss / len(sigma_lst)
+        loss = 0.5 * ((scores - target) ** 2).sum(dim=-1).mean(dim=0)
+        return loss
 
     def train_network(
         self,
         dataset: TensorDataset,
         params: TrainParams,
-        sigma_max=1,
-        sigma_min=-3,
-        n_sigmas=10,
+        sigma_lst: torch.Tensor,
+        split=True,
     ):
         """
         Train a network given a dataset and optimization parameters.
-        Following Song & Ermon, we train a noise-conditioned score function where
-        the sequence of noise is provided with a geometric sequence of length
-        n_sigmas, with max 10^log_sigma_max and min 10^log_sigma_min.
         """
-        self.net.train()
-        optimizer = optim.Adam(self.net.parameters(), params.lr)
-        scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, params.epochs)
+        self.sigma_lst = sigma_lst
 
-        data_loader_train = torch.utils.data.DataLoader(
-            dataset, batch_size=params.adam_params.batch_size
+        # We assume z_batch is (x_batch, u_batch, xnext_batch)
+        def loss_fn(z_batch, net):
+            loss = 0.0
+            for i, sigma in enumerate(sigma_lst):
+                loss_sigma = self.evaluate_loss(z_batch[0], z_batch[1], i)
+                loss += (sigma**2.0) * loss_sigma
+            return loss
+
+        loss_lst = train_network(self, params, dataset, loss_fn, split)
+        return loss_lst
+
+
+class NoiseConditionedScoreEstimatorXux(ScoreEstimatorXux):
+    """
+    Train a noise conditioned score estimator.
+    """
+
+    def __init__(
+        self,
+        dim_x,
+        dim_u,
+        network: MLPwEmbedding,
+        x_normalizer: Normalizer = None,
+        u_normalizer: Normalizer = None,
+    ):
+        super().__init__(dim_x, dim_u, network, x_normalizer, u_normalizer)
+        self.register_buffer("sigma_lst", torch.ones(network.embedding_size))
+
+    def _get_score_zbar_given_zbar(self, zbar, i):
+        """
+        Compute the score ∇_z̅ log p(z̅) for the normalized z̅
+        """
+        return self.net(zbar, i)
+
+    def get_score_z_given_z(self, z, i):
+        """
+        Compute ∇_z log p(z, sigma) where sigma is the noise level.
+        We enter an integer value here as a token for sigma, s.t.
+        self.sigma_lst[i] = sigma.
+        """
+        zbar = self.normalize_z(z)
+        return self._get_score_zbar_given_zbar(zbar, i) / torch.cat(
+            (self.x_normalizer.k, self.u_normalizer.k, self.x_normalizer.k)
         )
-        data_loader_eval = torch.utils.data.DataLoader(dataset, batch_size=len(dataset))
 
-        sigma_lst = np.geomspace(sigma_min, sigma_max, n_sigmas)
-        loss_lst = np.zeros(params.adam_params.epochs)
+    def evaluate_loss(self, x_batch, u_batch, xnext_batch, i):
+        """
+        Evaluate denoising loss, Eq.(2) from Song & Ermon 2019.
+            data of shape (B, dim_x + dim_u)
+            sigma, a scalar variable.
+        Adopted from Song's codebase.
 
-        best_loss = np.inf
-        for epoch in tqdm(range(params.adam_params.epochs)):
-            training_loss = 0.0
-            for z_batch in data_loader_train:
-                z_batch = z_batch[0]
-                optimizer.zero_grad()
-                loss = self.evaluate_denoising_loss(z_batch, sigma_lst)
-                loss.backward()
-                optimizer.step()
-                scheduler.step()
+        Args:
+          i: index of sigma_lst.
+        """
 
-            with torch.no_grad():
-                for z_all in data_loader_eval:
-                    z_all = z_all[0]
-                    loss_eval = self.evaluate_denoising_loss(z_all, sigma_lst)
-                    loss_lst[epoch] = loss_eval.item()
-                if params.enabled:
-                    wandb.log(
-                        {"loss": loss_eval.item()},
-                        step=epoch,
-                    )
-                else:
-                    print(f"epoch {epoch}, loss {loss_eval.item()}")
-                if params.save_best_model is not None and loss_eval.item() < best_loss:
-                    model_path = os.path.join(os.getcwd(), params.save_best_model)
-                    torch.save(self.net.state_dict(), model_path)
-                    best_loss = loss_eval.item()
+        sigma = self.sigma_lst[i]
 
+        # Normalize the data
+        z_batch = self.get_z_from_xux(x_batch, u_batch, xnext_batch)
+        data_normalized = self.normalize_z(z_batch)
+        databar = data_normalized + torch.randn_like(z_batch) * sigma
+
+        target = -1 / (sigma**2) * (databar - data_normalized)
+        scores = self._get_score_zbar_given_zbar(databar, i)
+
+        target = target.view(target.shape[0], -1)
+        scores = scores.view(scores.shape[0], -1)
+
+        loss = 0.5 * ((scores - target) ** 2).sum(dim=-1).mean(dim=0)
+        return loss
+
+    def train_network(
+        self,
+        dataset: TensorDataset,
+        params: TrainParams,
+        sigma_lst: torch.Tensor,
+        split=True,
+    ):
+        """
+        Train a network given a dataset and optimization parameters.
+        """
+        self.sigma_lst = sigma_lst
+
+        # We assume z_batch is (x_batch, u_batch, xnext_batch)
+        def loss_fn(z_batch, net):
+            loss = 0.0
+            for i, sigma in enumerate(sigma_lst):
+                loss_sigma = self.evaluate_loss(z_batch[0], z_batch[1], z_batch[2], i)
+                loss += (sigma**2.0) * loss_sigma
+            return loss
+
+        loss_lst = train_network(self, params, dataset, loss_fn, split)
         return loss_lst
 
 
 def langevin_dynamics(
-    x0: torch.Tensor, score: torch.nn.Module, epsilon: float, steps: int
+    x0: torch.Tensor,
+    score: torch.nn.Module,
+    epsilon: float,
+    steps: int,
+    noise: bool = True,
 ) -> torch.Tensor:
     """
     Generate samples using Langevin dynamics
@@ -401,6 +517,28 @@ def langevin_dynamics(
         x_history[t] = (
             x_history[t - 1]
             + score(x_history[t - 1]) * epsilon / 2
-            + sqrt_epsilon * torch.randn_like(x_history[t - 1])
+            + float(noise) * (sqrt_epsilon * torch.randn_like(x_history[t - 1]))
+        )
+    return x_history
+
+
+def noise_conditioned_langevin_dynamics(
+    x0: torch.Tensor,
+    score_estimator: Union[
+        NoiseConditionedScoreEstimatorXu, NoiseConditionedScoreEstimatorXux
+    ],
+    epsilon: float,
+    steps: int,
+    noise: bool = True,
+):
+    assert epsilon > 0
+    sqrt_epsilon = np.sqrt(epsilon)
+    x_history = x0.repeat((steps,) + (1,) * x0.ndim)
+    for t in range(1, steps):
+        idx = round(len(score_estimator.sigma_lst) * (t / (steps + 1)) - 0.5)
+        x_history[t] = (
+            x_history[t - 1]
+            + score_estimator.get_score_z_given_z(x_history[t - 1], idx) * epsilon / 2
+            + float(noise) * (sqrt_epsilon * torch.randn_like(x_history[t - 1]))
         )
     return x_history
