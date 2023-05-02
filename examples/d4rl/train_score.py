@@ -9,8 +9,8 @@ import pickle
 from omegaconf import DictConfig
 import gym, d4rl
 
-from score_po.score_matching import ScoreEstimator
-from score_po.nn import MLP, TrainParams, Normalizer
+from score_po.score_matching import NoiseConditionedScoreEstimatorXux
+from score_po.nn import MLPwEmbedding, TrainParams, Normalizer
 
 
 @hydra.main(config_path="./config", config_name="score_training")
@@ -22,25 +22,31 @@ def main(cfg: DictConfig):
 
     x = torch.Tensor(dataset["observations"])
     u = torch.Tensor(dataset["actions"])
-    z = torch.cat((x, u), dim=1)
-    
-    z_max, _ = torch.max(z, axis=0)
-    z_min, _ = torch.min(z, axis=0)
-    k_z = z_max - z_min
-    b_z = (z_max + z_min) / 2
-    z_normalizer = Normalizer(k=k_z, b=b_z)
+    xnext = torch.Tensor(dataset["next_observations"])
+
+    x_max, _ = torch.max(x, axis=0)
+    x_min, _ = torch.min(x, axis=0)
+    k_x = x_max - x_min
+    b_x = (x_max + x_min) / 2
+    x_normalizer = Normalizer(k=k_x, b=b_x)
+
+    u_max, _ = torch.max(u, axis=0)
+    u_min, _ = torch.min(u, axis=0)
+    k_u = u_max - u_min
+    b_u = (u_max + u_min) / 2
+    u_normalizer = Normalizer(k=k_x, b=b_u)
 
     # We need to append pusher coordinates to keypoints to fully define
     # the state.
-    dataset = TensorDataset(z)
-    network = MLP(dim_x + dim_u, dim_x + dim_u, cfg.nn_layers)
+    dataset = TensorDataset(x, u, xnext)
+    network = MLPwEmbedding(dim_x + dim_u, dim_x + dim_u, cfg.nn_layers)
     params = TrainParams()
     params.load_from_config(cfg)
 
-    sf = ScoreEstimator(dim_x=dim_x, dim_u=dim_u, network=network,
-                        z_normalizer=z_normalizer)
-    sf.train_network(
-        dataset, params, sigma=cfg.sigma, mode="denoising", split=False)
+    sf = ScoreEstimator(
+        dim_x=dim_x, dim_u=dim_u, network=network, z_normalizer=z_normalizer
+    )
+    sf.train_network(dataset, params, sigma=cfg.sigma, mode="denoising", split=False)
 
 
 if __name__ == "__main__":
