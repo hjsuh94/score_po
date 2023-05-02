@@ -1,0 +1,1 @@
+We want to test if we can train a score function to generate data on the rim of a 2D circle.
