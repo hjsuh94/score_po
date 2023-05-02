@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 import os
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Union
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -20,7 +20,7 @@ from score_po.nn import (
     train_network,
     Normalizer,
     save_module,
-    MLPwEmbedding
+    MLPwEmbedding,
 )
 
 """
@@ -41,10 +41,12 @@ class ScoreEstimatorXu(torch.nn.Module):
     """
 
     def __init__(
-        self, dim_x, dim_u, network,
+        self,
+        dim_x,
+        dim_u,
+        network,
         x_normalizer: Normalizer = None,
         u_normalizer: Normalizer = None,
-    
     ):
         """
         We denote z̅ as z after normalization, namely
@@ -72,7 +74,7 @@ class ScoreEstimatorXu(torch.nn.Module):
             if u_normalizer is None
             else u_normalizer
         )
-        self.register_buffer("sigma", torch.ones(1))        
+        self.register_buffer("sigma", torch.ones(1))
         self.check_input_consistency()
 
     def check_input_consistency(self):
@@ -84,15 +86,15 @@ class ScoreEstimatorXu(torch.nn.Module):
             self.dim_x + self.dim_u
         ):
             raise ValueError("Inconsistent output size of neural network.")
-        
+
     def get_xu_from_z(self, z):
-        x = z[:, :self.dim_x]
-        u = z[:, self.dim_x:]
+        x = z[:, : self.dim_x]
+        u = z[:, self.dim_x :]
         return x, u
-    
+
     def get_z_from_xu(self, x, u):
         return torch.cat((x, u), dim=1)
-        
+
     def normalize_z(self, z):
         """
         Normalize z assuming z = [x,u]
@@ -121,7 +123,8 @@ class ScoreEstimatorXu(torch.nn.Module):
         """
         zbar = self.normalize_z(z)
         return self._get_score_zbar_given_zbar(zbar) / torch.cat(
-            (self.x_normalizer.k, self.u_normalizer.k))
+            (self.x_normalizer.k, self.u_normalizer.k)
+        )
 
     def forward(self, z):
         return self.get_score_z_given_z(z)
@@ -163,12 +166,14 @@ class ScoreEstimatorXu(torch.nn.Module):
         """
         # Retain memory of the noise level.
         self.sigma = sigma
-        # We assume z_batch is (x_batch, u_batch)        
+        # We assume z_batch is (x_batch, u_batch)
         loss_fn = lambda z_batch, net: self.evaluate_loss(
-            z_batch[0], z_batch[1], self.sigma)
+            z_batch[0], z_batch[1], self.sigma
+        )
         loss_lst = train_network(self, params, dataset, loss_fn, split)
         return loss_lst
-    
+
+
 class ScoreEstimatorXux(torch.nn.Module):
     """
     Score function estimator that stores the object
@@ -179,10 +184,12 @@ class ScoreEstimatorXux(torch.nn.Module):
     """
 
     def __init__(
-        self, dim_x, dim_u, network,
+        self,
+        dim_x,
+        dim_u,
+        network,
         x_normalizer: Normalizer = None,
         u_normalizer: Normalizer = None,
-    
     ):
         """
         We denote z̅ as z after normalization, namely
@@ -222,16 +229,16 @@ class ScoreEstimatorXux(torch.nn.Module):
             self.dim_x + self.dim_u + self.dim_x
         ):
             raise ValueError("Inconsistent output size of neural network.")
-        
+
     def get_xux_from_z(self, z):
-        x = z[:, :self.dim_x]
-        u = z[:, self.dim_x:self.dim_x + self.dim_u]
-        xnext = z[:, self.dim_x+self.dim_u:]
+        x = z[:, : self.dim_x]
+        u = z[:, self.dim_x : self.dim_x + self.dim_u]
+        xnext = z[:, self.dim_x + self.dim_u :]
         return x, u, xnext
-    
+
     def get_z_from_xux(self, x, u, xnext):
         return torch.cat((x, u, xnext), dim=1)
-        
+
     def normalize_z(self, z):
         """
         Normalize z assuming z = [x,u]
@@ -265,7 +272,8 @@ class ScoreEstimatorXux(torch.nn.Module):
         """
         zbar = self.normalize_z(z)
         return self._get_score_zbar_given_zbar(zbar) / torch.cat(
-            (self.x_normalizer.k, self.u_normalizer.k, self.x_normalizer.k))
+            (self.x_normalizer.k, self.u_normalizer.k, self.x_normalizer.k)
+        )
 
     def forward(self, z):
         return self.get_score_z_given_z(z)
@@ -308,7 +316,8 @@ class ScoreEstimatorXux(torch.nn.Module):
         self.sigma = sigma
         # We assume z_batch is (x_batch, u_batch, xnext_batch)
         loss_fn = lambda z_batch, net: self.evaluate_loss(
-            z_batch[0], z_batch[1], z_batch[2], self.sigma)
+            z_batch[0], z_batch[1], z_batch[2], self.sigma
+        )
         loss_lst = train_network(self, params, dataset, loss_fn, split)
         return loss_lst
 
@@ -317,12 +326,14 @@ class NoiseConditionedScoreEstimatorXu(ScoreEstimatorXu):
     """
     Train a noise conditioned score estimator.
     """
+
     def __init__(
-        self, dim_x, dim_u,
+        self,
+        dim_x,
+        dim_u,
         network: MLPwEmbedding,
         x_normalizer: Normalizer = None,
         u_normalizer: Normalizer = None,
-    
     ):
         super().__init__(dim_x, dim_u, network, x_normalizer, u_normalizer)
         self.register_buffer("sigma_lst", torch.ones(network.embedding_size))
@@ -341,8 +352,9 @@ class NoiseConditionedScoreEstimatorXu(ScoreEstimatorXu):
         """
         zbar = self.normalize_z(z)
         return self._get_score_zbar_given_zbar(zbar, i) / torch.cat(
-            (self.x_normalizer.k, self.u_normalizer.k))
-        
+            (self.x_normalizer.k, self.u_normalizer.k)
+        )
+
     def evaluate_loss(self, x_batch, u_batch, i):
         """
         Evaluate denoising loss, Eq.(2) from Song & Ermon 2019.
@@ -353,7 +365,7 @@ class NoiseConditionedScoreEstimatorXu(ScoreEstimatorXu):
         Args:
           i: index of sigma_lst.
         """
-        
+
         sigma = self.sigma_lst[i]
 
         # Normalize the data
@@ -369,7 +381,7 @@ class NoiseConditionedScoreEstimatorXu(ScoreEstimatorXu):
 
         loss = 0.5 * ((scores - target) ** 2).sum(dim=-1).mean(dim=0)
         return loss
-    
+
     def train_network(
         self,
         dataset: TensorDataset,
@@ -381,29 +393,31 @@ class NoiseConditionedScoreEstimatorXu(ScoreEstimatorXu):
         Train a network given a dataset and optimization parameters.
         """
         self.sigma_lst = sigma_lst
+
         # We assume z_batch is (x_batch, u_batch, xnext_batch)
         def loss_fn(z_batch, net):
             loss = 0.0
             for i, sigma in enumerate(sigma_lst):
-                loss_sigma = self.evaluate_loss(z_batch[0], z_batch[1],
-                                                i)
-                loss += (sigma ** 2.0) * loss_sigma
+                loss_sigma = self.evaluate_loss(z_batch[0], z_batch[1], i)
+                loss += (sigma**2.0) * loss_sigma
             return loss
 
         loss_lst = train_network(self, params, dataset, loss_fn, split)
-        return loss_lst    
-    
+        return loss_lst
+
 
 class NoiseConditionedScoreEstimatorXux(ScoreEstimatorXux):
     """
     Train a noise conditioned score estimator.
     """
+
     def __init__(
-        self, dim_x, dim_u,
+        self,
+        dim_x,
+        dim_u,
         network: MLPwEmbedding,
         x_normalizer: Normalizer = None,
         u_normalizer: Normalizer = None,
-    
     ):
         super().__init__(dim_x, dim_u, network, x_normalizer, u_normalizer)
         self.register_buffer("sigma_lst", torch.ones(network.embedding_size))
@@ -422,8 +436,9 @@ class NoiseConditionedScoreEstimatorXux(ScoreEstimatorXux):
         """
         zbar = self.normalize_z(z)
         return self._get_score_zbar_given_zbar(zbar, i) / torch.cat(
-            (self.x_normalizer.k, self.u_normalizer.k, self.x_normalizer.k))
-        
+            (self.x_normalizer.k, self.u_normalizer.k, self.x_normalizer.k)
+        )
+
     def evaluate_loss(self, x_batch, u_batch, xnext_batch, i):
         """
         Evaluate denoising loss, Eq.(2) from Song & Ermon 2019.
@@ -434,7 +449,7 @@ class NoiseConditionedScoreEstimatorXux(ScoreEstimatorXux):
         Args:
           i: index of sigma_lst.
         """
-        
+
         sigma = self.sigma_lst[i]
 
         # Normalize the data
@@ -450,7 +465,7 @@ class NoiseConditionedScoreEstimatorXux(ScoreEstimatorXux):
 
         loss = 0.5 * ((scores - target) ** 2).sum(dim=-1).mean(dim=0)
         return loss
-    
+
     def train_network(
         self,
         dataset: TensorDataset,
@@ -462,25 +477,25 @@ class NoiseConditionedScoreEstimatorXux(ScoreEstimatorXux):
         Train a network given a dataset and optimization parameters.
         """
         self.sigma_lst = sigma_lst
+
         # We assume z_batch is (x_batch, u_batch, xnext_batch)
         def loss_fn(z_batch, net):
             loss = 0.0
             for i, sigma in enumerate(sigma_lst):
-                loss_sigma = self.evaluate_loss(z_batch[0], z_batch[1], z_batch[2],
-                                                i)
-                loss += (sigma ** 2.0) * loss_sigma
+                loss_sigma = self.evaluate_loss(z_batch[0], z_batch[1], z_batch[2], i)
+                loss += (sigma**2.0) * loss_sigma
             return loss
 
         loss_lst = train_network(self, params, dataset, loss_fn, split)
         return loss_lst
-        
+
 
 def langevin_dynamics(
     x0: torch.Tensor,
     score: torch.nn.Module,
     epsilon: float,
     steps: int,
-    noise: bool = True
+    noise: bool = True,
 ) -> torch.Tensor:
     """
     Generate samples using Langevin dynamics
@@ -502,5 +517,28 @@ def langevin_dynamics(
         x_history[t] = (
             x_history[t - 1]
             + score(x_history[t - 1]) * epsilon / 2
-            + float(noise) * (sqrt_epsilon * torch.randn_like(x_history[t - 1])))
+            + float(noise) * (sqrt_epsilon * torch.randn_like(x_history[t - 1]))
+        )
+    return x_history
+
+
+def noise_conditioned_langevin_dynamics(
+    x0: torch.Tensor,
+    score_estimator: Union[
+        NoiseConditionedScoreEstimatorXu, NoiseConditionedScoreEstimatorXux
+    ],
+    epsilon: float,
+    steps: int,
+    noise: bool = True,
+):
+    assert epsilon > 0
+    sqrt_epsilon = np.sqrt(epsilon)
+    x_history = x0.repeat((steps,) + (1,) * x0.ndim)
+    for t in range(1, steps):
+        idx = round(len(score_estimator.sigma_lst) * (t / (steps + 1)) - 0.5)
+        x_history[t] = (
+            x_history[t - 1]
+            + score_estimator.get_score_z_given_z(x_history[t - 1], idx) * epsilon / 2
+            + float(noise) * (sqrt_epsilon * torch.randn_like(x_history[t - 1]))
+        )
     return x_history
