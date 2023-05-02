@@ -1,0 +1,28 @@
+defaults:
+  - user: terry
+
+hydra:
+  run:
+    dir: ${user.run_dir}
+
+
+nn_layers: [256, 256, 256, 256]
+env_name: ${user.env_name}
+sigma: 0.05
+
+# Train parameters
+train:
+  wandb:
+    enabled: ${user.wandb_enabled}
+    project: score_po_d4rl
+    dir: ${user.run_dir}/${env_name}/${now:%Y-%m-%d}/${now:%H-%M-%S}
+    name: ${now:%Y.%m.%d-%H.%M.%S}_d4rl_${env_name}_score
+    entity: ${user.wandb_entity}
+  adam:
+    lr: 1e-3
+    epochs: 1000
+    batch_size: 2048
+  dataset_split: null    
+  save_best_model: checkpoint_score_${env_name}.pth
+  load_ckpt: null
+  device: "cuda"
