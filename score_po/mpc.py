@@ -28,6 +28,7 @@ class MPC:
         self.x_trj_last = None
         self.u_trj_last = None
         self.iter = 0
+        self.warm_start = True
         self.initialize_params_for_mpc()
         if isinstance(opt.trj, BVPTrajectory):
             raise NotImplementedError(
@@ -62,14 +63,19 @@ class MPC:
         self.reset_optimizer()
 
         # reset initial condition.
-        self.opt.trj = IVPTrajectory(2, 2, self.opt.trj.T, x.detach())
+        self.opt.trj = IVPTrajectory(
+            self.opt.trj.dim_x, self.opt.trj.dim_u, self.opt.trj.T, x.detach()
+        )
         # warm start MPC from last iteration.
-        if self.x_trj_last is None:
-            x_trj_guess, u_trj_guess = None, None
+        if self.warm_start:
+            if self.x_trj_last is None:
+                x_trj_guess, u_trj_guess = None, None
+            else:
+                x_trj_guess, u_trj_guess = self.shift_trajectory(
+                    self.x_trj_last.detach(), self.u_trj_last.detach()
+                )
         else:
-            x_trj_guess, u_trj_guess = self.shift_trajectory(
-                self.x_trj_last.detach(), self.u_trj_last.detach()
-            )
+            x_trj_guess, u_trj_guess = None, None
 
         # iterate.
         self.opt.iterate(x_trj_guess=x_trj_guess, u_trj_guess=u_trj_guess)
