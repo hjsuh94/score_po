@@ -10,7 +10,7 @@ from omegaconf import DictConfig
 import gym, d4rl
 
 from score_po.score_matching import NoiseConditionedScoreEstimatorXux
-from score_po.nn import MLPwEmbedding, TrainParams, Normalizer
+from score_po.nn import MLPwEmbedding, TrainParams, Normalizer, generate_cosine_schedule
 
 
 @hydra.main(config_path="./config", config_name="score_training")
@@ -34,19 +34,32 @@ def main(cfg: DictConfig):
     u_min, _ = torch.min(u, axis=0)
     k_u = u_max - u_min
     b_u = (u_max + u_min) / 2
-    u_normalizer = Normalizer(k=k_x, b=b_u)
+    u_normalizer = Normalizer(k=k_u, b=b_u)
 
     # We need to append pusher coordinates to keypoints to fully define
     # the state.
     dataset = TensorDataset(x, u, xnext)
-    network = MLPwEmbedding(dim_x + dim_u, dim_x + dim_u, cfg.nn_layers)
+    network = MLPwEmbedding(
+        dim_x + dim_u + dim_x, dim_x + dim_u + dim_x, 4 * [1024], 10
+    )
     params = TrainParams()
     params.load_from_config(cfg)
 
-    sf = ScoreEstimator(
-        dim_x=dim_x, dim_u=dim_u, network=network, z_normalizer=z_normalizer
+    sf = NoiseConditionedScoreEstimatorXux(
+        dim_x=dim_x,
+        dim_u=dim_u,
+        network=network,
+        x_normalizer=x_normalizer,
+        u_normalizer=u_normalizer,
     )
-    sf.train_network(dataset, params, sigma=cfg.sigma, mode="denoising", split=False)
+
+    sf.train_network(
+        dataset,
+        params,
+        sigma_lst=generate_cosine_schedule(0.3, 0.05, 10),
+        split=False,
+        sample_sigma=True,
+    )
 
 
 if __name__ == "__main__":
