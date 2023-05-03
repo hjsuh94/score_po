@@ -1,0 +1,36 @@
+defaults:
+  - user: lujie
+
+hydra:
+  run:
+    dir: ${user.run_dir}
+
+nn_layers: [512, 512, 512]
+plot_period: 10
+pendulum_length: 0.5
+
+trj:
+  T: 25
+  x0: [-0.5, 0., 0.]
+  xT: [0.5, 0., 0.]
+  batch_size: 1 # 1 for trajopt.
+  lr: 1e-2
+  max_iters: 300
+  save_best_model: checkpoint.pth
+  saving_period: 100
+  load_ckpt: null
+  device: "cuda"
+  beta: 10.0
+
+  wandb:
+    enabled: ${user.wandb_enabled}
+    project: score_po
+    dir: ${user.run_dir}
+    name: ${now:%Y.%m.%d-%H.%M.%S}
+    entity: ${user.wandb_entity}
+
+cost:
+  Q: [0, 0, 0]
+  R: [1]
+  Qd: [0, 0, 0]
+  xd: [0.5, 0, 0]
