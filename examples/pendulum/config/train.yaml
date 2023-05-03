@@ -1,0 +1,35 @@
+defaults:
+  - user: lujie
+  - plant_param: param1
+
+hydra:
+  run:
+    dir: ${user.run_dir}
+  sweep:
+    dir: ${user.run_dir}
+
+nn_layers: [512, 512, 512]
+dataset_size: 100000
+
+train:
+  wandb:
+    enabled: ${user.wandb_enabled}
+    project: score_po
+    dir: ${user.run_dir}
+    name: ${now:%Y.%m.%d-%H.%M.%S}_pendulum_keypoint
+    entity: ${user.wandb_entity}
+  adam:
+    lr: 1e-3
+    epochs: 500
+    batch_size: 1024
+  dataset_split: [0.99, 0.01]
+  save_best_model: ncsn_xux.pth
+  load_ckpt: null
+  device: "cuda"
+  seed: 123
+
+langevin_epsilon: 0.1
+langevin_steps: 500 
+
+train_score: False
+load_score: "/home/lu/score_po/examples/pendulum/weights/ncsn_xux.pth"
