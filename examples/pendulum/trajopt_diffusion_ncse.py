@@ -66,7 +66,7 @@ def main(cfg: DictConfig):
                 # plt.arrow(x_trj[t,0], x_trj[t,1], u_trj[t,0], color=colormap(
                 # t / cfg.trj.T))
             theta = np.linspace(0, 2 * np.pi, 100)
-            plt.plot(np.cos(theta) * 0.5, np.sin(theta) * 0.5, linestyle="--")
+            plt.plot(np.cos(theta) * cfg.pendulum_length, np.sin(theta) * cfg.pendulum_length, linestyle="--")
             plt.axis('equal')
             plt.xlim([-1, 1])
             plt.ylim([-1, 1])            
