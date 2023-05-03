@@ -5,6 +5,8 @@ defaults:
 hydra:
   run:
     dir: ${user.run_dir}
+  sweep:
+    dir: ${user.run_dir}
 
 nn_layers: [512, 512, 512]
 dataset_size: 100000
@@ -29,5 +31,5 @@ train:
 langevin_epsilon: 0.1
 langevin_steps: 500 
 
-train_score: True
+train_score: False
 load_score: "/home/lu/score_po/examples/pendulum/weights/ncsn_xux.pth"
