@@ -8,7 +8,9 @@ import torch
 import matplotlib.pyplot as plt
 import wandb
 
-from score_po.dynamical_system import DynamicalSystem
+from score_po.dynamical_system import (
+    DynamicalSystem,
+    NNEnsembleDynamicalSystem)
 from score_po.score_matching import (
     ScoreEstimatorXux, ScoreEstimatorXu,
     NoiseConditionedScoreEstimatorXu,
@@ -106,8 +108,7 @@ class TrajectoryOptimizer:
         self.trj = self.trj.to(self.params.device)
         self.initialize()
         self.trj.train()
-
-        loss = self.get_value_loss()
+        loss = self.get_value_loss() + self.params.beta * self.get_penalty_loss()
 
         start_time = time.time()
         print("Iteration: {:04d} | Cost: {:.3f} | Time: {:.3f}".format(0, loss, 0))
@@ -216,7 +217,7 @@ class TrajectoryOptimizerSF(TrajectoryOptimizer):
             raise ValueError("Must be BVPTrajectory or IVPTrajectory")
 
 
-""" Variant of TrjaectoryOptimizerSF with Variance annealing """
+""" Variant of TrajectoryOptimizerSF with Variance annealing """
 class TrajectoryOptimizerNCSF(TrajectoryOptimizerSF):
     def __init__(self, params: TrajectoryOptimizerSFParams, **kwargs):
         super().__init__(params)
@@ -249,7 +250,7 @@ class TrajectoryOptimizerNCSF(TrajectoryOptimizerSF):
             self.trj.xnext_trj.grad += weight * sxnext_trj
             self.trj.u_trj.grad += weight * su_trj
         else:
-            raise ValueError("Must be BVPTrajectory or IVPTrajectory")        
+            raise ValueError("Must be BVPTrajectory or IVPTrajectory")    
 
 
 """ TrajectoryOptimizer with First Order + Dircol + DDE"""
@@ -365,7 +366,7 @@ class TrajectoryOptimizerSS(TrajectoryOptimizer):
         return -score
 
 
-""" Variant of TrjaectoryOptimizerSS with Variance annealing """
+""" Variant of TrajectoryOptimizerSS with Variance annealing """
 class TrajectoryOptimizerNCSS(TrajectoryOptimizerSS):
     def __init__(self, params: TrajectoryOptimizerSFParams, **kwargs):
         super().__init__(params)
@@ -398,3 +399,162 @@ class TrajectoryOptimizerNCSS(TrajectoryOptimizerSS):
 
         score = torch.einsum("ti,ti->t", z_trj, sz_trj).sum()
         return -score
+    
+@dataclass
+class TrajectoryOptimizerSSEnsembleParams(TrajectoryOptimizerParams):
+    beta: float = 1.0
+    ds: DynamicalSystem = None
+    
+    def __init__(self):
+        super().__init__()
+
+    def load_from_config(self, cfg: DictConfig):
+        super().load_from_config(cfg)
+        self.beta = cfg.trj.beta
+
+    def to_device(self, device):
+        super().to_device(device)
+        if isinstance(self.ds, torch.nn.Module):
+            self.ds.to(device)
+
+
+class TrajectoryOptimizerSSEnsemble(TrajectoryOptimizer):
+    def __init__(self, params: TrajectoryOptimizerSSEnsembleParams, **kwargs):
+        super().__init__(params)
+        self.ds = params.ds
+        self.K = len(self.ds.ds_lst)
+        assert isinstance(self.trj, SSTrajectory)
+        assert isinstance(self.ds, NNEnsembleDynamicalSystem)
+        
+    def initialize(self):
+        u_trj_init = torch.zeros(self.trj.u_trj.shape).to(self.params.device)
+        self.trj.u_trj = torch.nn.Parameter(u_trj_init)
+        
+    def rollout_trajectory(self):
+        """
+        Rollout trajectory with ensembles.
+        """
+        x_trj = torch.zeros(
+            (self.K , self.trj.T + 1, self.ds.dim_x)).to(self.params.device)
+        u_trj = torch.cat(self.K * [self.trj.u_trj[None,:,:]])
+        x_trj[:,0,:] = self.trj.x0
+        
+        for t in range(self.trj.T):
+            x_trj[:,t+1,:] = self.ds.dynamics_batch(
+                x_trj[:,t,:][:,None,:], u_trj[:,t,:][:,None,:]
+            )[:,0,:]
+
+        return x_trj, u_trj
+        
+    def get_value_loss(self):
+        # Loop over trajectories to compute reward loss.
+        x_trj, u_trj = self.rollout_trajectory()
+        cost = torch.zeros(self.K).to(self.params.device)
+        for k in range(self.K):
+            cost[k] += self.cost.get_running_cost_batch(
+                x_trj[k,:-1,:], u_trj[k,:,:]).sum()
+            cost[k] += self.cost.get_terminal_cost(x_trj[k,-1,:])
+        return cost.mean()
+
+    def get_penalty_loss(self):
+        x_trj, u_trj = self.rollout_trajectory()
+        cost = torch.zeros(self.K).to(self.params.device)
+        for k in range(self.K):
+            cost[k] += self.cost.get_running_cost_batch(
+                x_trj[k,:-1,:], u_trj[k,:,:]).sum()
+            cost[k] += self.cost.get_terminal_cost(x_trj[k,-1,:])
+        return cost.var()
+
+
+@dataclass
+class CEMEnsembleParams(TrajectoryOptimizerParams):
+    beta: float = 1.0
+    ds: DynamicalSystem = None
+    n_elite: int = 3
+    batch_size: int = 10
+    std: float = 0.05
+    
+    def __init__(self):
+        super().__init__()
+
+    def load_from_config(self, cfg: DictConfig):
+        super().load_from_config(cfg)
+        self.beta = cfg.trj.beta
+        self.std = cfg.trj.std
+
+    def to_device(self, device):
+        super().to_device(device)
+        if isinstance(self.ds, torch.nn.Module):
+            self.ds.to(device)
+
+
+class CEMEnsemble(TrajectoryOptimizerSSEnsemble):
+    def __init__(self, params: CEMEnsembleParams, **kwargs):
+        super().__init__(params)
+    
+    def update_trajectory(self):
+        u_trj_batch = torch.cat(self.params.batch_size * [self.trj.u_trj[None,:]])
+        u_trj_batch += torch.randn_like(u_trj_batch) * self.params.std
+        cost_lst = torch.zeros(self.params.batch_size).to(self.params.device)
+        for b in range(self.params.batch_size):
+            self.trj.u_trj = torch.nn.Parameter(u_trj_batch[b,:,:])
+            cost_lst[b] = self.get_value_loss() + self.params.beta * self.get_penalty_loss()
+        _, ind = torch.topk(cost_lst, self.params.n_elite, largest=False)
+        next_trj = u_trj_batch[ind, : ,:].mean(dim=0)
+        self.trj.u_trj = torch.nn.Parameter(next_trj)
+    
+    def iterate(self, callback=None):
+        """
+        Callback is a function that can be called with signature 
+        f(self, loss, iter)
+        """
+        if self.params.wandb_params.enabled:
+            if self.params.wandb_params.dir is not None and not os.path.exists(
+                self.params.wandb_params.dir
+            ):
+                self.os.makedirs(self.params.wandb_params.dir, exist_ok=True)
+            wandb.init(
+                project=self.params.wandb_params.project,
+                name=self.params.wandb_params.name,
+                dir=self.params.wandb_params.dir,
+                config=self.params.wandb_params.config,
+                entity=self.params.wandb_params.entity,
+            )
+
+        self.trj = self.trj.to(self.params.device)
+        self.initialize()
+        self.trj.train()
+
+        loss = self.get_value_loss()
+
+        start_time = time.time()
+        print("Iteration: {:04d} | Cost: {:.3f} | Time: {:.3f}".format(0, loss, 0))
+        self.cost_lst = np.zeros(self.params.max_iters)
+        self.cost_lst[0] = loss.item()
+
+        for iter in range(self.params.max_iters - 1):
+            if callback is not None:
+                callback(self, loss.item(), iter)
+                
+            self.update_trajectory()
+            loss = self.get_value_loss() + self.params.beta * self.get_penalty_loss()
+            self.cost_lst[iter + 1] = loss.item()
+
+            if self.params.wandb_params.enabled:
+                wandb.log({"trj_loss": loss.item()})
+            if self.params.saving_period is not None and iter % self.params.saving_period == 0:
+                model_path = os.path.join(os.getcwd(), self.params.save_best_model)
+                model_dir = os.path.dirname(model_path)
+                if not os.path.exists(model_dir):
+                    os.makedirs(model_dir, exist_ok=True)
+                save_module(self.trj, model_path)
+
+            print(
+                "Iteration: {:04d} | Cost: {:.3f} | Time: {:.3f}".format(
+                    iter + 1, loss.item(), time.time() - start_time
+                )
+            )
+            
+            self.iter += 1
+
+        return self.cost_lst    
