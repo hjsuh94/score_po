@@ -33,11 +33,13 @@ def generate_data(radius: float, sample_size: int, device: str) -> torch.Tensor:
 def construct_score(radius: float, device: str, noise_conditioned: bool):
     if noise_conditioned:
         network = MLPwEmbedding(
-            dim_in=2, dim_out=2, hidden_layers=[32, 32, 32], embedding_size=32
+            dim_in=2, dim_out=2, hidden_layers=[512, 512, 512], embedding_size=10
         ).to(device)
         sf_cls = NoiseConditionedScoreEstimatorXu
     else:
-        network = MLP(dim_in=2, dim_out=2, hidden_layers=[32, 32, 32], layer_norm=True)
+        network = MLP(
+            dim_in=2, dim_out=2, hidden_layers=[512, 512, 512], layer_norm=True
+        )
         sf_cls = ScoreEstimatorXu
     sf = sf_cls(
         dim_x=2,
@@ -78,7 +80,7 @@ def plot_result(
     sf: Union[ScoreEstimatorXu, NoiseConditionedScoreEstimatorXu],
     radius: float,
     cfg: DictConfig,
-    sample_size: int
+    sample_size: int,
 ):
     num_pts = 20
     x0 = torch.randn((num_pts, 2), device=cfg.device)
@@ -106,7 +108,9 @@ def plot_result(
         ax.plot(x_history[:, i, 0], x_history[:, i, 1])
 
     ax.set_aspect("equal", "box")
-    ax.set_title(f"Dataset size={sample_size}\nnoise conditioned={cfg.noise_conditioned}")
+    ax.set_title(
+        f"Dataset size={sample_size}\nnoise conditioned={cfg.noise_conditioned}"
+    )
 
     fig.savefig(
         os.path.join(

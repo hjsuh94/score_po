@@ -2,6 +2,7 @@ from omegaconf import DictConfig, OmegaConf
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
 import os, time
+import copy
 
 import numpy as np
 import torch
@@ -121,19 +122,28 @@ class EnsembleNetwork(nn.Module):
         self.dim_out = dim_out
         self.network_lst = network_lst
         self.K = len(network_lst)
+        self.params, self.buffers = torch.func.stack_module_state(
+            network_lst)
+        
+        base_model = copy.deepcopy(network_lst[0])
+        base_model = base_model.to('meta')
+        
+        def fmodel(params, buffers, x):
+            return torch.func.functional_call(base_model, (
+                params, buffers), (x,))
+            
+        self.map = torch.vmap(fmodel)
 
     def forward(self, x_batch):
-        """
-        Get the mean of the ensemble by calling the ensemble. As a nn.Module,
-        one could do
+        """ Return the model in batch. """
+        # https://pytorch.org/tutorials/intermediate/ensembling.html
+        if x_batch.shape[0] != self.K:
+            raise ValueError("leading dimension must be equal to ensemble size.")
+        return self.map(self.params, self.buffers, x_batch)
 
-        ensemble = EnsembleNetwork(dim_in, dim_out, network_lst)
-        y = ensemble(x)
-
-        to get the mean.
-        """
+    def get_mean(self, x_batch):
         B = x_batch.shape[0]
-        batch = torch.zeros((self.K, B) + self.dim_out, device=x_batch.device)
+        batch = torch.zeros(self.K, B, self.dim_out, device=x_batch.device)
         for k, network in enumerate(self.network_lst):
             batch[k] = network(x_batch)
         return batch.mean(dim=0)
@@ -160,13 +170,13 @@ class EnsembleNetwork(nn.Module):
 
         B = x_batch.shape[0]
 
-        batch = torch.zeros((self.K, B) + self.dim_out, device=x_batch.device)
+        batch = torch.zeros(self.K, B, self.dim_out, device=x_batch.device)
         for k, network in enumerate(self.network_lst):
             batch[k] = network(x_batch)
         mean = batch.mean(dim=0)
         dev = batch - mean.unsqueeze(0)  # K, B, dim_x
         # Note that empirical variance requires us to divide by K - 1 instead of K.
-        e_str = self.get_einsum_string(len(self.dim_out))
+        e_str = self.get_einsum_string(1)
         summation_string = "eb" + e_str + "," + e_str + "," + "eb" + e_str + "->eb"
         pairwise_dev = torch.einsum(summation_string, dev, metric, dev)
 

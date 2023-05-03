@@ -1,0 +1,8 @@
+run_dir: /home/terry/Documents/score_po_data/circle/
+
+wandb_enabled: True
+wandb_entity: hjsuh94
+
+save_score_ckpt: checkpoint.pth
+load_samples: /home/terry/Documents/score_po_data/circle/samples.pth
+load_score: /home/terry/Documents/score_po_data/circle/score/checkpoint.pth
