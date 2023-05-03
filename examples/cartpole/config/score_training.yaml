@@ -23,10 +23,14 @@ train:
     entity: ${user.wandb_entity}
   adam:
     lr: 1e-3
-    epochs: 100
+    epochs: 400
     batch_size: 2048
   dataset_split: [0.8, 0.2]
   save_best_model: ${user.save_score_ckpt}
   device: "cuda"
   sigma: 0.01
+  # sigma_max and sigma_min are used in the noised conditioned score estimator.
+  sigma_max: 0.25
+  sigma_min: 0.005
+  sigma_steps: 10
   xu: True

@@ -1,3 +1,12 @@
+"""
+Learn the score log p(x, u) or log p(x, u, x_next)
+
+If we learn log p(x, u), then we use ScoreEstimatorXu.
+If we learn log p(x, u, x_next), then we use NoiseConditionedScoreEstimatorXux. I have
+tried ScoreEstimatorXux but that doesn't learn good score function, I suspect it is
+because the dynamics constraint x_next = f(x, u) is not well captured unless we
+schedule the noise level.
+"""
 import os
 from typing import Union
 
@@ -11,9 +20,19 @@ import torch
 from score_po.score_matching import (
     ScoreEstimatorXu,
     ScoreEstimatorXux,
+    NoiseConditionedScoreEstimatorXux,
     langevin_dynamics,
+    noise_conditioned_langevin_dynamics,
 )
-from score_po.nn import MLP, TrainParams, save_module, Normalizer
+from score_po.nn import (
+    MLP,
+    MLPwEmbedding,
+    TrainParams,
+    save_module,
+    Normalizer,
+    generate_cosine_schedule,
+)
+from examples.cartpole.cartpole_plant import CartpolePlant
 
 OmegaConf.register_new_resolver("np.pi", lambda x: np.pi * x)
 
@@ -27,13 +46,14 @@ def get_score_network(xu: bool = True):
     if xu:
         return MLP(5, 5, [128, 128, 128, 128], activation=torch.nn.ReLU())
     else:
-        return MLP(
-            9, 9, [128, 128, 128, 128, 64], activation=torch.nn.ELU(), layer_norm=True
+        return MLPwEmbedding(
+            9, 9, [1024, 1024, 1024, 1024], embedding_size=10, activation=torch.nn.ELU()
         )
 
 
 def draw_score_result(
-    score_estimator: Union[ScoreEstimatorXu, ScoreEstimatorXux],
+    score_estimator: Union[ScoreEstimatorXu, NoiseConditionedScoreEstimatorXux],
+    plant: CartpolePlant,
     device: str,
     epsilon: float,
     steps: int,
@@ -50,12 +70,17 @@ def draw_score_result(
     xnext0 = score_estimator.x_normalizer.denormalize(
         2 * torch.randn((batch_size, 4), device=device)
     )
-    if isinstance(score_estimator, ScoreEstimatorXu):
-        z0 = torch.cat((x0, u0), dim=1)
-    elif isinstance(score_estimator, ScoreEstimatorXux):
-        z0 = torch.cat((x0, u0, xnext0), dim=1)
-
-    z_history = langevin_dynamics(z0, score_estimator, epsilon, steps, noise=False)
+    with torch.no_grad():
+        if isinstance(score_estimator, ScoreEstimatorXu):
+            z0 = torch.cat((x0, u0), dim=1)
+            z_history = langevin_dynamics(
+                z0, score_estimator, epsilon, steps, noise=False
+            )
+        elif isinstance(score_estimator, NoiseConditionedScoreEstimatorXux):
+            z0 = torch.cat((x0, u0, xnext0), dim=1)
+            z_history = noise_conditioned_langevin_dynamics(
+                z0, score_estimator, epsilon, steps, noise=False
+            )
 
     zT_np = z_history[-1].cpu().detach().numpy()
 
@@ -63,7 +88,8 @@ def draw_score_result(
     u0_np = u0.cpu().detach().numpy()
     xnext0_np = xnext0.cpu().detach().numpy()
     xT = zT_np[:, :4]
-    uT = zT_np[:, 5:6]
+    uT = zT_np[:, 4:5]
+    xnext_gt = plant.dynamics_batch(zT_np[:, :4], zT_np[:, 4:5])
 
     fig = plt.figure()
     ax1 = fig.add_subplot(121)
@@ -74,17 +100,17 @@ def draw_score_result(
         ax1.scatter(xT[:, 0], xT[:, 1], color="b", label="xT")
         ax2.scatter(x0_np[:, 2], x0_np[:, 3], color="g", label="x0")
         ax2.scatter(xT[:, 2], xT[:, 3], color="b", label="xT")
-    elif isinstance(score_estimator, ScoreEstimatorXux):
+    elif isinstance(score_estimator, NoiseConditionedScoreEstimatorXux):
         xnextT = zT_np[:, -4:]
 
         # Plot (x, x_next) as a short line segment.
         lc0 = mc.LineCollection(
             [
-                [(x0_np[i, 0], x0_np[i, 1]), (xnext0_np[i, 0], xnext0_np[i, 1])]
+                [(xT[i, 0], xT[i, 1]), (xnext_gt[i, 0], xnext_gt[i, 1])]
                 for i in range(batch_size)
             ],
             color="g",
-            label="x0",
+            label="x_gt",
         )
         ax1.add_collection(lc0)
         lcT = mc.LineCollection(
@@ -92,18 +118,18 @@ def draw_score_result(
                 [(xT[i, 0], xT[i, 1]), (xnextT[i, 0], xnextT[i, 1])]
                 for i in range(batch_size)
             ],
-            color="b",
-            label="xT",
+            color="k",
+            label="x",
         )
         ax1.add_collection(lcT)
 
         lc0 = mc.LineCollection(
             [
-                [(x0_np[i, 2], x0_np[i, 3]), (xnext0_np[i, 2], xnext0_np[i, 3])]
+                [(xT[i, 2], xT[i, 3]), (xnext_gt[i, 2], xnext_gt[i, 3])]
                 for i in range(batch_size)
             ],
             color="g",
-            label="x0",
+            label="x_gt",
         )
         ax2.add_collection(lc0)
         lcT = mc.LineCollection(
@@ -111,8 +137,8 @@ def draw_score_result(
                 [(xT[i, 2], xT[i, 3]), (xnextT[i, 2], xnextT[i, 3])]
                 for i in range(batch_size)
             ],
-            color="b",
-            label="xT",
+            color="k",
+            label="x",
         )
         ax2.add_collection(lcT)
 
@@ -140,7 +166,10 @@ def draw_score_result(
     ax2.set_ylabel(r"$\dot{\theta}$")
 
     fig.tight_layout()
-    sigma_val = "0:.4f".format(score_estimator.sigma[0].item())
+    if (isinstance(score_estimator, ScoreEstimatorXu)):
+        sigma_val = "0:.4f".format(score_estimator.sigma[0].item())
+    elif isinstance(score_estimator, NoiseConditionedScoreEstimatorXux):
+        sigma_val = "0:.4f".format(score_estimator.sigma_lst[0])
     fig.savefig(
         os.path.join(
             os.getcwd(),
@@ -148,6 +177,34 @@ def draw_score_result(
         ),
         format="png",
     )
+
+    fig_error, ax_error = plot_xux_dynamics_error(plant, z_history[-1])
+    fig_error.savefig(
+        os.path.join(
+            os.getcwd(),
+            f"dynamics_error_steps{steps}_eps{epsilon}_sigma{sigma_val}.png",
+        ),
+        format="png",
+    )
+
+
+def plot_xux_dynamics_error(plant: CartpolePlant, xux: torch.Tensor):
+    """
+    Given a batch of (x, u, x_next), plot the histogram of the error x_next - f(x, u)
+    """
+    x = xux[:, :4]
+    u = xux[:, 4:5]
+    x_next = xux[:, -4:]
+    x_next_gt = plant.dynamics_batch(x, u)
+    error = x_next_gt - x_next
+
+    fig_hist = plt.figure()
+    ax_hist = fig_hist.add_subplot()
+    ax_hist.hist(
+        torch.sqrt(torch.einsum("bi,bi->b", error, error)).cpu().detach().numpy()
+    )
+
+    return fig_hist, ax_hist
 
 
 @hydra.main(config_path="./config", config_name="score_training")
@@ -177,7 +234,7 @@ def main(cfg: DictConfig):
     if cfg.train.xu:
         estimator_cls = ScoreEstimatorXu
     else:
-        estimator_cls = ScoreEstimatorXux
+        estimator_cls = NoiseConditionedScoreEstimatorXux
     score_estimator = estimator_cls(
         dim_x=4,
         dim_u=1,
@@ -185,11 +242,22 @@ def main(cfg: DictConfig):
         x_normalizer=x_normalizer,
         u_normalizer=u_normalizer,
     )
-    # TODO(hongkai.dai): do a sweep on sigma (try sigma = 0.1)
-    sigma = torch.tensor([cfg.train.sigma], device=device)
+    plant = CartpolePlant(dt=cfg.plant_param.dt)
+    if cfg.train.xu:
+        sigma = torch.tensor([cfg.train.sigma], device=device)
+    else:
+        sigma = generate_cosine_schedule(
+            cfg.train.sigma_max, cfg.train.sigma_min, cfg.train.sigma_steps
+        )
     loss_lst = score_estimator.train_network(dataset, params, sigma, split=True)
     draw_score_result(
-        score_estimator, cfg.device, epsilon=1e-2, steps=5000, x_lb=x_lo, x_ub=x_up
+        score_estimator,
+        plant,
+        cfg.device,
+        epsilon=1e-2,
+        steps=5000,
+        x_lb=x_lo,
+        x_ub=x_up,
     )
 
 

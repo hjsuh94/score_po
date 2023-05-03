@@ -1,13 +1,16 @@
-run_dir: /home/hongkaidai/score_po_data/cartpole/${now:%Y-%m-%d}/${now:%H-%M-%S}
+run_dir: /home/hongkaidai/Dropbox/score_po_data/cartpole/${now:%Y-%m-%d}/${now:%H-%M-%S}
 
-dataset_load_path: /home/hongkaidai/score_po_data/cartpole/2023-04-28/11-43-31/dataset/dataset.pth
+# This dataset has size 1000000
+dataset_load_path: /home/hongkaidai/Dropbox/score_po_data/cartpole/2023-04-28/11-43-31/dataset/dataset.pth
+# This dataset has size 4000000
+# dataset_load_path: /home/hongkaidai/score_po_data/cartpole/2023-05-02/12-35-16/dataset/dataset.pth
 
 wandb_enabled: True
 wandb_entity: daihongkai
 
-dynamics_load_ckpt: /home/hongkaidai/score_po_data/cartpole/2023-04-28/11-43-31/checkpoint/checkpoint.pth
-load_swingup_trj: null # /home/hongkaidai/score_po_data/cartpole/2023-04-28/19-14-20/swingup_openloop_policy.pth
+dynamics_load_ckpt: /home/hongkaidai/Dropbox/score_po_data/cartpole/2023-04-28/11-43-31/checkpoint/checkpoint.pth
+load_swingup_trj: null # /home/hongkaidai/Dropbox/score_po_data/cartpole/2023-04-28/19-14-20/swingup_openloop_policy.pth
 save_swingup_trj: swingup_trj.pth
 save_score_ckpt: score/checkpoint.pth
-score_estimator_xu_load_ckpt: /home/hongkaidai/score_po_data/cartpole/2023-04-29/16-11-51/score/checkpoint.pth
-score_estimator_xux_load_ckpt: /home/hongkaidai/score_po_data/cartpole/2023-04-30/21-30-22/0/score/checkpoint.pth
+score_estimator_xu_load_ckpt: /home/hongkaidai/Dropbox/score_po_data/cartpole/2023-04-29/16-11-51/score/checkpoint.pth
+score_estimator_xux_load_ckpt: /home/hongkaidai/Dropbox/score_po_data/cartpole/2023-05-02/17-48-30/score/checkpoint.pth
