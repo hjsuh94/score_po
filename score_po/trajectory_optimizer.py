@@ -10,9 +10,11 @@ import wandb
 
 from score_po.dynamical_system import DynamicalSystem
 from score_po.score_matching import (
-    ScoreEstimatorXux, ScoreEstimatorXu,
+    ScoreEstimatorXux,
+    ScoreEstimatorXu,
     NoiseConditionedScoreEstimatorXu,
-    NoiseConditionedScoreEstimatorXux)
+    NoiseConditionedScoreEstimatorXux,
+)
 from score_po.data_distance import DataDistanceEstimatorXux
 from score_po.costs import Cost
 from score_po.trajectory import Trajectory, IVPTrajectory, BVPTrajectory, SSTrajectory
@@ -33,6 +35,7 @@ class TrajectoryOptimizerParams:
     saving_period: Optional[int] = 100
     device: str = "cuda"
     torch_optimizer: torch.optim.Optimizer = torch.optim.Adam
+    verbose: bool = True
 
     def __init__(self):
         self.wandb_params = WandbParams()
@@ -59,7 +62,7 @@ class TrajectoryOptimizer:
         self.params = params
         self.cost = params.cost
         self.trj = params.trj
-        self.iter = 0        
+        self.iter = 0
 
     def get_value_loss(self):
         # Loop over trajectories to compute reward loss.
@@ -74,18 +77,27 @@ class TrajectoryOptimizer:
     def modify_gradients(self):
         pass
 
-    def initialize(self):
-        xnext_trj_init = tensor_linspace(
-            self.trj.x0, self.trj.xT, steps=self.trj.xnext_trj.shape[0]
-        ).T
-        xnext_trj_init += torch.randn_like(xnext_trj_init) * 0.1
-        u_trj_init = torch.zeros(self.trj.u_trj.shape).to(self.params.device)
-        u_trj_init += torch.randn_like(u_trj_init) * 0.1
+    def initialize(self, x_trj_guess, u_trj_guess):
+        if x_trj_guess is None:
+            if isinstance(self.trj, BVPTrajectory):
+                xnext_trj_init = tensor_linspace(
+                    self.trj.x0, self.trj.xT, steps=self.trj.xnext_trj.shape[0]
+                ).T
+            else:
+                xnext_trj_init = torch.cat(self.trj.T * [self.trj.x0[None, :]])
+            self.trj.xnext_trj = torch.nn.Parameter(xnext_trj_init)
+            xnext_trj_init += torch.randn_like(xnext_trj_init) * 0.1
+        else:
+            self.trj.xnext_trj = torch.nn.Parameter(x_trj_guess[1:])
 
-        self.trj.xnext_trj = torch.nn.Parameter(xnext_trj_init)
-        self.trj.u_trj = torch.nn.Parameter(u_trj_init)
+        if u_trj_guess is None:
+            u_trj_init = torch.zeros(self.trj.u_trj.shape).to(self.params.device)
+            u_trj_init += torch.randn_like(u_trj_init) * 0.1
+            self.trj.u_trj = torch.nn.Parameter(u_trj_init)
+        else:
+            self.trj.u_trj = torch.nn.Parameter(u_trj_guess)
 
-    def iterate(self, callback=None):
+    def iterate(self, callback=None, x_trj_guess=None, u_trj_guess=None):
         """
         Callback is a function that can be called with signature
         f(self, loss, iter)
@@ -104,24 +116,26 @@ class TrajectoryOptimizer:
             )
 
         self.trj = self.trj.to(self.params.device)
-        self.initialize()
+        self.initialize(x_trj_guess, u_trj_guess)
         self.trj.train()
 
-        loss = self.get_value_loss()
+        # loss = self.get_value_loss()
+        loss = np.inf
 
         start_time = time.time()
-        print("Iteration: {:04d} | Cost: {:.3f} | Time: {:.3f}".format(0, loss, 0))
+        if self.params.verbose:
+            print("Iteration: {:04d} | Cost: {:.3f} | Time: {:.3f}".format(0, loss, 0))
         self.cost_lst = np.zeros(self.params.max_iters)
 
         best_cost = np.inf
-        self.cost_lst[0] = loss.item()
+        # self.cost_lst[0] = loss.item()
 
         optimizer = self.params.torch_optimizer(
             self.trj.parameters(), lr=self.params.lr
         )
-        
 
         for iter in range(self.params.max_iters - 1):
+            loss = 0.0
             if callback is not None:
                 callback(self, loss.item(), iter)
             optimizer.zero_grad()
@@ -137,7 +151,10 @@ class TrajectoryOptimizer:
             if loss.item() < best_cost:
                 best_cost = loss.item()
                 save_model = True
-            if self.params.saving_period is not None and iter % self.params.saving_period == 0:
+            if (
+                self.params.saving_period is not None
+                and iter % self.params.saving_period == 0
+            ):
                 save_model = True
             if self.params.save_best_model and save_model:
                 model_path = os.path.join(os.getcwd(), self.params.save_best_model)
@@ -146,12 +163,13 @@ class TrajectoryOptimizer:
                     os.makedirs(model_dir, exist_ok=True)
                 save_module(self.trj, model_path)
 
-            print(
-                "Iteration: {:04d} | Cost: {:.3f} | Time: {:.3f}".format(
-                    iter + 1, loss.item(), time.time() - start_time
+            if self.params.verbose:
+                print(
+                    "Iteration: {:04d} | Cost: {:.3f} | Time: {:.3f}".format(
+                        iter + 1, loss.item(), time.time() - start_time
+                    )
                 )
-            )
-            
+
             self.iter += 1
 
         return self.cost_lst
@@ -201,9 +219,9 @@ class TrajectoryOptimizerSF(TrajectoryOptimizer):
         z_trj = torch.cat((x_trj[:-1], u_trj, x_trj[1:]), dim=1)
         sz_trj = self.sf.get_score_z_given_z(z_trj)
         sx_trj, su_trj, sxnext_trj = self.sf.get_xux_from_z(sz_trj)
-        
-        weight = -self.params.sf.sigma ** 2 * self.params.beta
-   
+
+        weight = -self.params.sf.sigma**2 * self.params.beta
+
         if isinstance(self.trj, BVPTrajectory):
             self.trj.xnext_trj.grad += weight * sx_trj[1:]
             self.trj.xnext_trj.grad += weight * sxnext_trj[:-1]
@@ -217,29 +235,32 @@ class TrajectoryOptimizerSF(TrajectoryOptimizer):
 
 
 """ Variant of TrjaectoryOptimizerSF with Variance annealing """
+
+
 class TrajectoryOptimizerNCSF(TrajectoryOptimizerSF):
     def __init__(self, params: TrajectoryOptimizerSFParams, **kwargs):
         super().__init__(params)
         self.sf = params.sf
         self.sigma_lst = params.sf.sigma_lst
         assert isinstance(self.sf, NoiseConditionedScoreEstimatorXux)
-        
+
     def get_current_sigma(self):
         idx = round(
-            len(self.sigma_lst) * ((self.iter) / (self.params.max_iters + 1)) - 0.5)
+            len(self.sigma_lst) * ((self.iter) / (self.params.max_iters + 1)) - 0.5
+        )
         return idx, self.sf.sigma_lst[idx]
-        
+
     def modify_gradients(self):
         # Modify value loss by applying score function.
         sigma_idx, sigma = self.get_current_sigma()
-        #weight = -1 / sigma ** 2 * self.params.beta
-        weight = -sigma ** 2 * self.params.beta
+        # weight = -1 / sigma ** 2 * self.params.beta
+        weight = -(sigma**2) * self.params.beta
         x_trj, u_trj = self.trj.get_full_trajectory()
-        
+
         z_trj = torch.cat((x_trj[:-1], u_trj, x_trj[1:]), dim=1)
         sz_trj = self.sf.get_score_z_given_z(z_trj, sigma_idx)
         sx_trj, su_trj, sxnext_trj = self.sf.get_xux_from_z(sz_trj)
-   
+
         if isinstance(self.trj, BVPTrajectory):
             self.trj.xnext_trj.grad += weight * sx_trj[1:]
             self.trj.xnext_trj.grad += weight * sxnext_trj[:-1]
@@ -249,7 +270,7 @@ class TrajectoryOptimizerNCSF(TrajectoryOptimizerSF):
             self.trj.xnext_trj.grad += weight * sxnext_trj
             self.trj.u_trj.grad += weight * su_trj
         else:
-            raise ValueError("Must be BVPTrajectory or IVPTrajectory")        
+            raise ValueError("Must be BVPTrajectory or IVPTrajectory")
 
 
 """ TrajectoryOptimizer with First Order + Dircol + DDE"""
@@ -366,16 +387,19 @@ class TrajectoryOptimizerSS(TrajectoryOptimizer):
 
 
 """ Variant of TrjaectoryOptimizerSS with Variance annealing """
+
+
 class TrajectoryOptimizerNCSS(TrajectoryOptimizerSS):
     def __init__(self, params: TrajectoryOptimizerSFParams, **kwargs):
         super().__init__(params)
         self.sigma_lst = params.sf.sigma_lst
         assert isinstance(self.sf, NoiseConditionedScoreEstimatorXu)
-        
+
     def get_current_sigma(self):
         idx = round(
-            len(self.sigma_lst) * ((self.iter) / (self.params.max_iters + 1)) - 0.5)
-        return idx, self.sf.sigma_lst[idx] 
+            len(self.sigma_lst) * ((self.iter) / (self.params.max_iters + 1)) - 0.5
+        )
+        return idx, self.sf.sigma_lst[idx]
 
     def get_penalty_loss(self):
         """
@@ -389,7 +413,7 @@ class TrajectoryOptimizerNCSS(TrajectoryOptimizerSS):
         idx, sigma = self.get_current_sigma()
         x_trj, u_trj = self.rollout_trajectory()
         z_trj = torch.cat((x_trj[:-1], u_trj), dim=1)
-        
+
         sz_trj = self.sf.get_score_z_given_z(z_trj, idx)
 
         # Here, ∇_z log p(z) is detached from the computation graph so that we ignore
