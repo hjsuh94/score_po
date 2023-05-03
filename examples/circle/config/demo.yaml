@@ -20,7 +20,7 @@ train:
     entity: ${user.wandb_entity}
   adam:
     lr: 1e-3
-    epochs: 100
+    epochs: 500
     batch_size: 2048
   dataset_split: [0.8, 0.2]
   save_best_model: ${user.save_score_ckpt}
@@ -31,15 +31,15 @@ radius: 3
 noise_conditioned: True
 
 # Fixed sigma, for ScoreEstimatorXu
-sigma: 0.05
+sigma: 0.25
 
 # NoiseConditionedScoreEstimatorXu
-sigma_max: 0.2
-sigma_min: 0.01
+sigma_max: 0.25
+sigma_min: 0.05
 sigma_steps: 10
 
 langevin_epsilon: 0.1
-langevin_steps: 50 
+langevin_steps: 500
 
 generate_data: True
 load_samples: ${user.load_samples}
@@ -48,4 +48,4 @@ train_score: True
 save_samples: samples.pth
 load_score: ${user.load_score}
 
-sample_size: 10000
+sample_size: 1000
