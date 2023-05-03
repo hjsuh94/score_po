@@ -82,7 +82,7 @@ def main(cfg: DictConfig):
             device=device,
         )
         sf.train_network(dataset, params, sigma_lst=generate_cosine_schedule(
-            0.2, 0.01, 10))
+            0.2, 0.05, 10))
     else:
         sf.load_state_dict(torch.load(cfg.load_score))
         
