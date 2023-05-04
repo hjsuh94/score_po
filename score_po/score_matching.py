@@ -388,6 +388,7 @@ class NoiseConditionedScoreEstimatorXu(ScoreEstimatorXu):
         params: TrainParams,
         sigma_lst: torch.Tensor,
         split=True,
+        sample_sigma=False,
     ):
         """
         Train a network given a dataset and optimization parameters.
@@ -397,9 +398,14 @@ class NoiseConditionedScoreEstimatorXu(ScoreEstimatorXu):
         # We assume z_batch is (x_batch, u_batch, xnext_batch)
         def loss_fn(z_batch, net):
             loss = 0.0
-            for i, sigma in enumerate(sigma_lst):
-                loss_sigma = self.evaluate_loss(z_batch[0], z_batch[1], i)
-                loss += (sigma**2.0) * loss_sigma
+            if sample_sigma:
+                idx = torch.randint(0, len(sigma_lst), (1,)).item()
+                loss_sigma = self.evaluate_loss(z_batch[0], z_batch[1], idx)
+                loss = (sigma_lst[idx] ** 2.0) * loss_sigma
+            else:
+                for i, sigma in enumerate(sigma_lst):
+                    loss_sigma = self.evaluate_loss(z_batch[0], z_batch[1], i)
+                    loss += (sigma**2.0) * loss_sigma
             return loss
 
         loss_lst = train_network(self, params, dataset, loss_fn, split)
@@ -472,6 +478,7 @@ class NoiseConditionedScoreEstimatorXux(ScoreEstimatorXux):
         params: TrainParams,
         sigma_lst: torch.Tensor,
         split=True,
+        sample_sigma=False,
     ):
         """
         Train a network given a dataset and optimization parameters.
@@ -481,9 +488,16 @@ class NoiseConditionedScoreEstimatorXux(ScoreEstimatorXux):
         # We assume z_batch is (x_batch, u_batch, xnext_batch)
         def loss_fn(z_batch, net):
             loss = 0.0
-            for i, sigma in enumerate(sigma_lst):
-                loss_sigma = self.evaluate_loss(z_batch[0], z_batch[1], z_batch[2], i)
-                loss += (sigma**2.0) * loss_sigma
+            if sample_sigma:
+                idx = torch.randint(0, len(sigma_lst), (1,)).item()
+                loss_sigma = self.evaluate_loss(z_batch[0], z_batch[1], z_batch[2], idx)
+                loss = (sigma_lst[idx] ** 2.0) * loss_sigma
+            else:
+                for i, sigma in enumerate(sigma_lst):
+                    loss_sigma = self.evaluate_loss(
+                        z_batch[0], z_batch[1], z_batch[2], i
+                    )
+                    loss += (sigma**2.0) * loss_sigma
             return loss
 
         loss_lst = train_network(self, params, dataset, loss_fn, split)
