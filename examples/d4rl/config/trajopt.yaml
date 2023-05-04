@@ -1,0 +1,35 @@
+defaults:
+  - user: terry
+
+hydra:
+  run:
+    dir: ${user.run_dir}
+
+
+nn_layers: [256, 256, 256, 256]
+nn_layers_policy: [128, 128]
+env_name: ${user.env_name}
+sigma: 0.05
+
+cost_weights: ${user.cost_weights}
+score_weights: ${user.score_weights}
+
+trj:
+  T: 5000
+  x0: [0.8, 0.2]
+  xT: [-0.8, 0.2]
+  batch_size: 1 # 1 for trajopt.
+  lr: 1e-1
+  max_iters: 2000
+  save_best_model: null
+  saving_period: null
+  load_ckpt: null
+  device: "cuda"
+  beta: 100.0
+
+  wandb:
+    enabled: ${user.wandb_enabled}
+    project: score_po
+    dir: ${user.run_dir}
+    name: ${now:%Y.%m.%d-%H.%M.%S}
+    entity: ${user.wandb_entity}

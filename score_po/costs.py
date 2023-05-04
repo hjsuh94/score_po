@@ -148,11 +148,11 @@ class NNCost(Cost):
 
     def get_terminal_cost(self, x):
         """We assume the learned cost does not have any terminal costs."""
-        return torch.zeros(1).to(x.device)
+        return 0.0
 
     def get_terminal_cost_batch(self, x_batch):
         """We assume the learned cost does not have any terminal costs."""
-        return torch.zeros((x_batch.shape[0])).to(x_batch.device)
+        return 0.0
 
     def train_network(
         self, dataset: TensorDataset, params: TrainParams, sigma: float = 0.0
