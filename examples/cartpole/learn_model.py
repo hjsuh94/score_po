@@ -47,7 +47,7 @@ def generate_data(
         Return the flag if each state in state_batch is within the wall.
         """
         cart_within_wall = torch.all(torch.logical_and(
-            state_batch <= x_up, state_batch >= x_up
+            state_batch <= x_up, state_batch >= x_lo
         ), dim=1)
         return cart_within_wall
 
@@ -74,10 +74,10 @@ def main(cfg: DictConfig):
     OmegaConf.save(cfg, os.path.join(os.getcwd(), "config.yaml"))
     torch.manual_seed(cfg.seed)
     device = cfg.device
-    x_lo = torch.tensor(cfg.plant_param.x_lo)
-    x_up = torch.tensor(cfg.plant_param.x_up)
-    u_lo = torch.tensor([-cfg.plant_param.u_max])
-    u_up = torch.tensor([cfg.plant_param.u_max])
+    x_lo = torch.tensor(cfg.plant_param.x_lo, device=device)
+    x_up = torch.tensor(cfg.plant_param.x_up, device=device)
+    u_lo = torch.tensor([-cfg.plant_param.u_max], device=device)
+    u_up = torch.tensor([cfg.plant_param.u_max], device=device)
     x_normalizer = Normalizer(k=(x_up - x_lo) / 2, b=(x_up + x_lo) / 2)
     u_normalizer = Normalizer(k=(u_up - u_lo) / 2, b=(u_up + u_lo) / 2)
     nn_plant = CartpoleNNDynamicalSystem(
@@ -100,17 +100,18 @@ def main(cfg: DictConfig):
         if not os.path.exists(dataset_dir):
             os.makedirs(dataset_dir)
         dataset_save_path = os.path.join(dataset_dir, "dataset.pth")
-        print(f"Save dataset to {dataset_save_path}.")
+        print(f"Save dataset to {dataset_save_path}, dataset size={len(dataset)}.")
         torch.save(dataset, dataset_save_path)
     else:
         print(f"Load dataset {cfg.dataset.load_path}")
         dataset = torch.load(cfg.dataset.load_path)
 
-    params = TrainParams()
-    params.load_from_config(cfg)
-    if cfg.train.load_ckpt is not None:
-        nn_plant.load_state_dict(torch.load(cfg.train.load_ckpt))
-    nn_plant.train_network(dataset, params, sigma=0.0)
+    if cfg.train_model:
+        params = TrainParams()
+        params.load_from_config(cfg)
+        if cfg.train.load_ckpt is not None:
+            nn_plant.load_state_dict(torch.load(cfg.train.load_ckpt))
+        nn_plant.train_network(dataset, params, sigma=0.0)
 
 
 if __name__ == "__main__":

@@ -19,11 +19,16 @@ from score_po.policy_optimizer import (
 )
 from score_po.trajectory_optimizer import (
     TrajectoryOptimizerSF,
+    TrajectoryOptimizerNCSF,
     TrajectoryOptimizerSFParams,
     TrajectoryOptimizerSSParams,
     TrajectoryOptimizerSS,
 )
-from score_po.score_matching import ScoreEstimatorXu, ScoreEstimatorXux
+from score_po.score_matching import (
+    ScoreEstimatorXu,
+    ScoreEstimatorXux,
+    NoiseConditionedScoreEstimatorXux,
+)
 from score_po.costs import QuadraticCost
 from score_po.policy import TimeVaryingOpenLoopPolicy, Clamper
 from examples.cartpole.score_training import get_score_network
@@ -149,7 +154,7 @@ def single_shooting(
 
 def dircol(
     x0: torch.Tensor,
-    score_estimator: ScoreEstimatorXux,
+    score_estimator: NoiseConditionedScoreEstimatorXux,
     cfg: DictConfig,
 ):
     device = x0.device
@@ -176,7 +181,7 @@ def dircol(
 
     params.to_device(device)
 
-    traj_optimizer = TrajectoryOptimizerSF(params)
+    traj_optimizer = TrajectoryOptimizerNCSF(params)
     traj_optimizer.iterate()
     return traj_optimizer
 
@@ -194,7 +199,9 @@ def main(cfg: DictConfig):
     plant = CartpolePlant(dt=cfg.plant_param.dt)
 
     score_network = get_score_network(xu=cfg.single_shooting)
-    score_estimator_cls = ScoreEstimatorXu if cfg.single_shooting else ScoreEstimatorXux
+    score_estimator_cls = (
+        ScoreEstimatorXu if cfg.single_shooting else NoiseConditionedScoreEstimatorXux
+    )
     sf = score_estimator_cls(dim_x=4, dim_u=1, network=score_network).to(device)
     if cfg.single_shooting:
         sf.load_state_dict(torch.load(cfg.score_estimator_xu_load_ckpt))
