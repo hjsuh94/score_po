@@ -8,7 +8,7 @@ because the dynamics constraint x_next = f(x, u) is not well captured unless we
 schedule the noise level.
 """
 import os
-from typing import Union
+from typing import Union, Optional
 
 import hydra
 import matplotlib.pyplot as plt
@@ -32,7 +32,7 @@ from score_po.nn import (
     Normalizer,
     generate_cosine_schedule,
 )
-from examples.cartpole.cartpole_plant import CartpolePlant
+from examples.cartpole.cartpole_plant import CartpolePlant, CartpoleNNDynamicalSystem
 
 OmegaConf.register_new_resolver("np.pi", lambda x: np.pi * x)
 
@@ -47,13 +47,14 @@ def get_score_network(xu: bool = True):
         return MLP(5, 5, [128, 128, 128, 128], activation=torch.nn.ReLU())
     else:
         return MLPwEmbedding(
-            9, 9, [1024, 1024, 1024, 1024], embedding_size=10, activation=torch.nn.ELU()
+            9, 9, [4096] * 4, embedding_size=10, activation=torch.nn.ELU()
         )
 
 
 def draw_score_result(
     score_estimator: Union[ScoreEstimatorXu, NoiseConditionedScoreEstimatorXux],
     plant: CartpolePlant,
+    nn_plant: Optional[CartpoleNNDynamicalSystem],
     device: str,
     epsilon: float,
     steps: int,
@@ -82,6 +83,7 @@ def draw_score_result(
                 z0, score_estimator, epsilon, steps, noise=False
             )
 
+    zT = z_history[-1]
     zT_np = z_history[-1].cpu().detach().numpy()
 
     x0_np = x0.cpu().detach().numpy()
@@ -90,6 +92,8 @@ def draw_score_result(
     xT = zT_np[:, :4]
     uT = zT_np[:, 4:5]
     xnext_gt = plant.dynamics_batch(zT_np[:, :4], zT_np[:, 4:5])
+    if nn_plant is not None:
+        xnext_nn = nn_plant.dynamics_batch(zT[:, :4], zT[:, 4:5]).cpu().detach().numpy()
 
     fig = plt.figure()
     ax1 = fig.add_subplot(121)
@@ -104,7 +108,7 @@ def draw_score_result(
         xnextT = zT_np[:, -4:]
 
         # Plot (x, x_next) as a short line segment.
-        lc0 = mc.LineCollection(
+        lc_gt = mc.LineCollection(
             [
                 [(xT[i, 0], xT[i, 1]), (xnext_gt[i, 0], xnext_gt[i, 1])]
                 for i in range(batch_size)
@@ -112,18 +116,28 @@ def draw_score_result(
             color="g",
             label="x_gt",
         )
-        ax1.add_collection(lc0)
-        lcT = mc.LineCollection(
+        ax1.add_collection(lc_gt)
+        lc_score = mc.LineCollection(
             [
                 [(xT[i, 0], xT[i, 1]), (xnextT[i, 0], xnextT[i, 1])]
                 for i in range(batch_size)
             ],
             color="k",
-            label="x",
+            label="x_score",
         )
-        ax1.add_collection(lcT)
+        ax1.add_collection(lc_score)
+        if nn_plant is not None:
+            lc_nn = mc.LineCollection(
+                [
+                    [(xT[i, 0], xT[i, 1]), (xnext_nn[i, 0], xnext_nn[i, 1])]
+                    for i in range(batch_size)
+                ],
+                color="r",
+                label="x_nn",
+            )
+            ax1.add_collection(lc_nn)
 
-        lc0 = mc.LineCollection(
+        lc_gt = mc.LineCollection(
             [
                 [(xT[i, 2], xT[i, 3]), (xnext_gt[i, 2], xnext_gt[i, 3])]
                 for i in range(batch_size)
@@ -131,16 +145,26 @@ def draw_score_result(
             color="g",
             label="x_gt",
         )
-        ax2.add_collection(lc0)
-        lcT = mc.LineCollection(
+        ax2.add_collection(lc_gt)
+        lc_score = mc.LineCollection(
             [
                 [(xT[i, 2], xT[i, 3]), (xnextT[i, 2], xnextT[i, 3])]
                 for i in range(batch_size)
             ],
             color="k",
-            label="x",
+            label="x_score",
         )
-        ax2.add_collection(lcT)
+        ax2.add_collection(lc_score)
+        if nn_plant is not None:
+            lc_nn = mc.LineCollection(
+                [
+                    [(xT[i, 2], xT[i, 3]), (xnext_nn[i, 2], xnext_nn[i, 3])]
+                    for i in range(batch_size)
+                ],
+                color="r",
+                label="x_nn",
+            )
+            ax2.add_collection(lc_nn)
 
     x_lb_np = x_lb.cpu().detach().numpy()
     x_ub_np = x_ub.cpu().detach().numpy()
@@ -166,7 +190,7 @@ def draw_score_result(
     ax2.set_ylabel(r"$\dot{\theta}$")
 
     fig.tight_layout()
-    if (isinstance(score_estimator, ScoreEstimatorXu)):
+    if isinstance(score_estimator, ScoreEstimatorXu):
         sigma_val = "0:.4f".format(score_estimator.sigma[0].item())
     elif isinstance(score_estimator, NoiseConditionedScoreEstimatorXux):
         sigma_val = "0:.4f".format(score_estimator.sigma_lst[0])
@@ -178,7 +202,7 @@ def draw_score_result(
         format="png",
     )
 
-    fig_error, ax_error = plot_xux_dynamics_error(plant, z_history[-1])
+    fig_error, ax_error = plot_xux_dynamics_error(plant, nn_plant, z_history[-1])
     fig_error.savefig(
         os.path.join(
             os.getcwd(),
@@ -187,24 +211,57 @@ def draw_score_result(
         format="png",
     )
 
+    # Draw histogram of u
+    fig_u = plt.figure()
+    ax_u = fig_u.add_subplot()
+    ax_u.hist(uT)
+    ax_u.set_title("Histogram of u")
+    fig_u.savefig(
+        os.path.join(os.getcwd(), f"u_hist_steps{steps}_eps{epsilon}.png"), format="png"
+    )
 
-def plot_xux_dynamics_error(plant: CartpolePlant, xux: torch.Tensor):
+
+def plot_xux_dynamics_error(
+    plant: CartpolePlant,
+    nn_plant: Optional[CartpoleNNDynamicalSystem],
+    xux_score: torch.Tensor,
+):
     """
     Given a batch of (x, u, x_next), plot the histogram of the error x_next - f(x, u)
     """
-    x = xux[:, :4]
-    u = xux[:, 4:5]
-    x_next = xux[:, -4:]
+    x = xux_score[:, :4]
+    u = xux_score[:, 4:5]
+    x_next_score = xux_score[:, -4:]
     x_next_gt = plant.dynamics_batch(x, u)
-    error = x_next_gt - x_next
+    error_score = x_next_gt - x_next_score
+
+    if nn_plant is not None:
+        x_next_nn = nn_plant.dynamics_batch(x, u)
+        error_nn = x_next_gt - x_next_nn
 
     fig_hist = plt.figure()
-    ax_hist = fig_hist.add_subplot()
-    ax_hist.hist(
-        torch.sqrt(torch.einsum("bi,bi->b", error, error)).cpu().detach().numpy()
+    if nn_plant is None:
+        ax_score = fig_hist.add_subplot()
+    else:
+        ax_score = fig_hist.add_subplot(211)
+        ax_nn = fig_hist.add_subplot(212)
+    ax_score.hist(
+        torch.sqrt(torch.einsum("bi,bi->b", error_score, error_score))
+        .cpu()
+        .detach()
+        .numpy()
     )
+    ax_score.set_title("Dynamics error for score-based model")
+    if nn_plant is not None:
+        ax_nn.hist(
+            torch.sqrt(torch.einsum("bi,bi->b", error_nn, error_nn))
+            .cpu()
+            .detach()
+            .numpy()
+        )
+        ax_nn.set_title("Dynamics error for regression model")
 
-    return fig_hist, ax_hist
+    return fig_hist, ax_score
 
 
 @hydra.main(config_path="./config", config_name="score_training")
@@ -253,6 +310,7 @@ def main(cfg: DictConfig):
     draw_score_result(
         score_estimator,
         plant,
+        None,
         cfg.device,
         epsilon=1e-2,
         steps=5000,

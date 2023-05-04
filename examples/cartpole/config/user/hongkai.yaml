@@ -13,4 +13,4 @@ load_swingup_trj: null # /home/hongkaidai/Dropbox/score_po_data/cartpole/2023-04
 save_swingup_trj: swingup_trj.pth
 save_score_ckpt: score/checkpoint.pth
 score_estimator_xu_load_ckpt: /home/hongkaidai/Dropbox/score_po_data/cartpole/2023-04-29/16-11-51/score/checkpoint.pth
-score_estimator_xux_load_ckpt: /home/hongkaidai/Dropbox/score_po_data/cartpole/2023-05-02/17-48-30/score/checkpoint.pth
+score_estimator_xux_load_ckpt: /home/hongkaidai/Dropbox/score_po_data/cartpole/2023-05-02/23-25-38/score/checkpoint.pth
