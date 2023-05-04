@@ -28,12 +28,8 @@ class MPC:
         self.x_trj_last = None
         self.u_trj_last = None
         self.iter = 0
-        self.warm_start = True
+        self.warm_start = False
         self.initialize_params_for_mpc()
-        if isinstance(opt.trj, BVPTrajectory):
-            raise NotImplementedError(
-                "Due to handling recursive feasibility, we assume each MPC is solving a IVP problem."
-            )
 
     def initialize_params_for_mpc(self):
         # Avoid every loggin operations.
@@ -46,15 +42,20 @@ class MPC:
         """
         From x0 ~ xT, compute a guess of x1 ~ xT+1 by shifting the trajectories by one.
         """
-        x_trj_now = torch.zeros_like(x_trj_last)
-        x_trj_now[:-1] = x_trj_last[1:]
-        x_trj_now[-1] = x_trj_last[-1]
+        if x_trj_last is not None:
+            x_trj_now = torch.zeros_like(x_trj_last)
+            x_trj_now[:-1] = x_trj_last[1:]
+            x_trj_now[-1] = x_trj_last[-1]
+            x_trj_now = x_trj_now.detach()
+        else:
+            x_trj_now = None
 
         u_trj_now = torch.zeros_like(u_trj_last)
         u_trj_now[:-1] = u_trj_last[1:]
         u_trj_now[-1] = u_trj_last[-1]
+        u_trj_now = u_trj_now.detach()
 
-        return x_trj_now.detach(), u_trj_now.detach()
+        return x_trj_now, u_trj_now
 
     def reset_optimizer(self):
         self.opt.iter = 0
@@ -63,16 +64,24 @@ class MPC:
         self.reset_optimizer()
 
         # reset initial condition.
-        self.opt.trj = IVPTrajectory(
-            self.opt.trj.dim_x, self.opt.trj.dim_u, self.opt.trj.T, x.detach()
-        )
+        if isinstance(self.opt.trj, IVPTrajectory):
+            self.opt.trj = IVPTrajectory(
+                self.opt.trj.dim_x, self.opt.trj.dim_u, self.opt.trj.T, x.detach()
+            )
+        elif isinstance(self.opt.trj, SSTrajectory):
+            self.opt.trj = SSTrajectory(
+                self.opt.trj.dim_x, self.opt.trj.dim_u, self.opt.trj.T, x.detach()
+            )
+        else:
+            raise NotImplementedError("MPC only supports SS and IVPTrajectory.")
+
         # warm start MPC from last iteration.
         if self.warm_start:
-            if self.x_trj_last is None:
+            if self.u_trj_last is None:
                 x_trj_guess, u_trj_guess = None, None
             else:
                 x_trj_guess, u_trj_guess = self.shift_trajectory(
-                    self.x_trj_last.detach(), self.u_trj_last.detach()
+                    self.x_trj_last, self.u_trj_last
                 )
         else:
             x_trj_guess, u_trj_guess = None, None
@@ -81,7 +90,10 @@ class MPC:
         self.opt.iterate(x_trj_guess=x_trj_guess, u_trj_guess=u_trj_guess)
 
         # get full trajectory.
-        self.x_trj_last, self.u_trj_last = self.opt.trj.get_full_trajectory()
+        if isinstance(self.opt.trj, IVPTrajectory):
+            self.x_trj_last, self.u_trj_last = self.opt.trj.get_full_trajectory()
+        elif isinstance(self.opt.trj, SSTrajectory):
+            self.u_trj_last = torch.clone(self.opt.trj.u_trj).detach()
 
         # return action.
         return self.opt.trj.u_trj[0]

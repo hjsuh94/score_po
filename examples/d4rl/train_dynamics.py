@@ -37,7 +37,7 @@ def main(cfg: DictConfig):
     u_normalizer = Normalizer(k=k_u, b=b_u)
 
     dataset = TensorDataset(x, u, xnext)
-    network = MLP(dim_x + dim_u, dim_x, cfg.nn_layers)
+    network = MLP(dim_x + dim_u, dim_x, 4 * [1024], layer_norm=True)
     params = TrainParams()
     params.load_from_config(cfg)
 

@@ -103,8 +103,14 @@ class GymPolicyEvaluator:
                 torch.Tensor(obs).to(self.mpc.opt.params.device)
             )
 
-            x_trj_last = self.mpc.x_trj_last.cpu().detach().numpy()
-            u_trj_last = self.mpc.u_trj_last.cpu().detach().numpy()
+            if isinstance(self.mpc.opt.trj, BVPTrajectory):
+                x_trj_last = self.mpc.x_trj_last.cpu().detach().numpy()
+                u_trj_last = self.mpc.u_trj_last.cpu().detach().numpy()
+            else:
+                x_trj_last, u_trj_last = self.mpc.opt.rollout_trajectory()
+                x_trj_last = x_trj_last.cpu().detach().numpy()
+                u_trj_last = u_trj_last.cpu().detach().numpy()
+
             self.traj_vis.render_trajectory(
                 x_trj_last, u_trj_last, "{:04d}".format(time)
             )
