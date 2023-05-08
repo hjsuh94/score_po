@@ -1,0 +1,4 @@
+run_dir: /home/gchou/PycharmProjects/score_po_data/${now:%Y-%m-%d}/${now:%H-%M-%S}
+
+wandb_enabled: True
+wandb_entity: gchou

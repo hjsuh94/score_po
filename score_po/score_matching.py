@@ -221,11 +221,11 @@ class ScoreEstimatorXux(torch.nn.Module):
         self.check_input_consistency()
 
     def check_input_consistency(self):
-        if hasattr(self.net, "dim_in") and self.net.dim_in is not (
+        if hasattr(self.net, "dim_in") and self.net.dim_in != (
             self.dim_x + self.dim_u + self.dim_x
         ):
             raise ValueError("Inconsistent input size of neural network.")
-        if hasattr(self.net, "dim_out") and self.net.dim_out is not (
+        if hasattr(self.net, "dim_out") and self.net.dim_out != (
             self.dim_x + self.dim_u + self.dim_x
         ):
             raise ValueError("Inconsistent output size of neural network.")
@@ -489,6 +489,87 @@ class NoiseConditionedScoreEstimatorXux(ScoreEstimatorXux):
         loss_lst = train_network(self, params, dataset, loss_fn, split)
         return loss_lst
 
+class NoiseConditionedScoreEstimatorXuxImage(ScoreEstimatorXux):
+    """
+    Train a noise conditioned score estimator.
+    """
+
+    def __init__(
+        self,
+        dim_x,
+        dim_u,
+        sigma_list,
+        network: MLPwEmbedding,
+        x_normalizer: Normalizer = None,
+        u_normalizer: Normalizer = None,
+    ):
+        super().__init__(dim_x, dim_u, network, x_normalizer, u_normalizer)
+        self.register_buffer("sigma_lst", sigma_list)
+
+    def _get_score_zbar_given_zbar(self, zbar, sigma):
+        """
+        Compute the score ∇_z̅ log p(z̅) for the normalized z̅
+        """
+        return self.net(zbar, sigma)
+
+    def get_score_z_given_z(self, z, sigma):
+        """
+        Compute ∇_z log p(z, sigma) where sigma is the noise level.
+        We enter an integer value here as a token for sigma, s.t.
+        self.sigma_lst[i] = sigma.
+        """
+        zbar = z
+        return self._get_score_zbar_given_zbar(zbar, sigma)
+
+    def evaluate_loss(self, x_batch, u_batch, xnext_batch, i, anneal_power=2):
+        """
+        Evaluate denoising loss, Eq.(2) from Song & Ermon 2019.
+            data of shape (B, dim_x + dim_u)
+            sigma, a scalar variable.
+        Adopted from Song's codebase.
+
+        Args:
+
+        """
+        samples_x = x_batch.reshape(-1, 1, 32, 32)
+        samples_xnext = xnext_batch.reshape(-1, 1, 32, 32)
+        samples = torch.cat((samples_x, samples_xnext), dim=1)
+        labels = torch.randint(0, len(self.sigma_lst), (samples.shape[0],), device=samples.device)
+        used_sigmas = self.sigma_lst[labels].view(samples.shape[0], *([1] * len(samples.shape[1:])))
+        used_sigmas_u = self.sigma_lst[labels].view(u_batch.shape[0], *([1] * len(u_batch.shape[1:])))
+        noise = torch.randn_like(samples) * used_sigmas
+        noise_u = torch.randn_like(u_batch) * used_sigmas_u
+        perturbed_samples = samples + noise
+        perturbed_samples_u = u_batch + noise_u
+        target = - 1 / (used_sigmas ** 2) * noise
+        target_u = - 1 / (used_sigmas_u ** 2) * noise_u
+        scores, scores_u = self.net(perturbed_samples, perturbed_samples_u, labels)
+        target = target.view(target.shape[0], -1)
+        scores = scores.view(scores.shape[0], -1)
+        loss = 1 / 2. * ((scores - target) ** 2).sum(dim=-1) * used_sigmas.squeeze() ** anneal_power
+        loss_u = 1 / 2. * ((scores_u - target_u) ** 2).sum(dim=-1) * used_sigmas_u.squeeze() ** anneal_power
+        loss += loss_u
+        return loss.mean(dim=0)
+
+    def train_network(
+        self,
+        dataset: TensorDataset,
+        params: TrainParams,
+        sigma_lst: torch.Tensor,
+        split=True,
+    ):
+        """
+        Train a network given a dataset and optimization parameters.
+        """
+        self.sigma_lst = sigma_lst
+
+        # We assume z_batch is (x_batch, u_batch, xnext_batch)
+        def loss_fn(z_batch, net):
+            loss = self.evaluate_loss(z_batch[0], z_batch[1], z_batch[2], 0)
+            return loss
+
+        loss_lst = train_network(self, params, dataset, loss_fn, split)
+        return loss_lst
 
 def langevin_dynamics(
     x0: torch.Tensor,
@@ -542,3 +623,60 @@ def noise_conditioned_langevin_dynamics(
             + float(noise) * (sqrt_epsilon * torch.randn_like(x_history[t - 1]))
         )
     return x_history
+
+
+def noise_conditioned_langevin_dynamics_image(x_mod, u_mod, scorenet, sigmas,
+                                              n_steps_each=5, step_lr=0.0000062,
+                                              final_only=False, verbose=True, denoise=True):
+    """
+    Args:
+        x_mod: Batch of samples of (x_t, x_{t+1}) to initialize sampling. Size: (batch_size, 2, num_pixels, num_pixels)
+        u_mod: Batch of samples u_t to initialize sampling. Size: (batch_size, num_control)
+        scorenet: a torch Module that outputs ∇ₓ log p(x)
+        sigmas: noise levels
+        n_steps_each: number of Langevin steps for each noise level
+        step_lr: Langevin dynamics step size
+        final_only: if True: returns only the final sample; else, return full history of samples
+        verbose: whether to print out the progress
+        denoise: whether to denoise the final samples
+    """
+    images, images_u = [], []
+
+    with torch.no_grad():
+        for c, sigma in enumerate(sigmas):
+            labels = torch.ones(x_mod.shape[0], device=x_mod.device) * c
+            labels = labels.long()
+            step_size = step_lr * (sigma / sigmas[-1]) ** 2
+            for s in range(n_steps_each):
+                grad, grad_u = scorenet(x_mod, u_mod, labels)
+                noise = torch.randn_like(x_mod).to(x_mod.device)
+                noise_u = torch.randn_like(u_mod).to(u_mod.device)
+                grad_norm = torch.norm(grad.view(grad.shape[0], -1), dim=-1).mean()
+                noise_norm = torch.norm(noise.view(noise.shape[0], -1), dim=-1).mean()
+                x_mod = x_mod + step_size * grad + noise * torch.sqrt(step_size * 2)
+                u_mod = u_mod + step_size * grad_u + noise_u * torch.sqrt(step_size * 2)
+
+                image_norm = torch.norm(x_mod.view(x_mod.shape[0], -1), dim=-1).mean()
+                snr = torch.sqrt(step_size / 2.) * grad_norm / noise_norm
+                grad_mean_norm = torch.norm(grad.mean(dim=0).view(-1)) ** 2 * sigma ** 2
+
+                if not final_only:
+                    images.append(x_mod.to('cpu'))
+                    images_u.append(u_mod.to('cpu'))
+                if verbose:
+                    print("level: {}, step_size: {}, grad_norm: {}, image_norm: {}, snr: {}, grad_mean_norm: {}".format(
+                        c, step_size, grad_norm.item(), image_norm.item(), snr.item(), grad_mean_norm.item()))
+
+        if denoise:
+            last_noise = (len(sigmas) - 1) * torch.ones(x_mod.shape[0], device=x_mod.device)
+            last_noise = last_noise.long()
+            grad_final, grad_u_final = scorenet(x_mod, u_mod, last_noise)
+            x_mod = x_mod + sigmas[-1] ** 2 * grad_final
+            u_mod = u_mod + sigmas[-1] ** 2 * grad_u_final
+            images.append(x_mod.to('cpu'))
+            images_u.append(u_mod.to('cpu'))
+
+        if final_only:
+            return [x_mod.to('cpu')], [u_mod.to('cpu')]
+        else:
+            return images, images_u
