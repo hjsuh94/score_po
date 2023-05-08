@@ -1,0 +1,37 @@
+defaults:
+  - user: glen
+
+data:
+  channels: 2
+
+hydra:
+  run:
+    dir: ${user.run_dir}
+
+nn_layers: [512, 512, 512, 512]
+dataset_size: 100000
+
+load_data: True
+load_data_path: '/home/gchou/PycharmProjects/score_po_data/pixels_singleint/100000.pt'
+
+model:
+  ngf: 128
+  num_classes: 232
+  sigma_begin: 50
+  sigma_end: 0.01
+
+train:
+  wandb:
+    enabled: ${user.wandb_enabled}
+    project: score_po
+    dir: ${user.run_dir}
+    name: ${now:%Y.%m.%d-%H.%M.%S}_pixels_singleint
+    entity: ${user.wandb_entity}
+  adam:
+    lr: 1e-4
+    epochs: 2000
+    batch_size: 128
+  dataset_split: [0.99, 0.01]
+  save_best_model: ncsn_xux.pth
+  load_ckpt: null
+  device: "cuda"
