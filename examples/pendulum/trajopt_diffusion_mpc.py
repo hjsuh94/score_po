@@ -1,7 +1,6 @@
 import numpy as np
 import torch
 import matplotlib.pyplot as plt
-from matplotlib.patches import Circle
 from matplotlib.pyplot import get_cmap
 import os
 from tqdm import tqdm
@@ -65,8 +64,7 @@ def main(cfg: DictConfig):
     x_kp_history = true_dynamics.state_to_keypoints(x_history)
     for t in tqdm(range(T)):
         u_history[t] = mpc.get_action(x_kp_history[t])
-        x_history[t + 1] = true_dynamics.dynamics(x_history[t], u_history[t])
-        x_kp_history[t + 1] = true_dynamics.state_to_keypoints(x_history[t + 1: t + 2])
+        x_kp_history[t + 1] = true_dynamics.dynamics(x_kp_history[t], u_history[t])
         x_trj, u_trj = mpc.opt.trj.get_full_trajectory()
         x_trj = x_trj.cpu().detach().numpy()
         u_trj = u_trj.cpu().detach().numpy()
