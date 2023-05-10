@@ -135,7 +135,7 @@ class TrajectoryOptimizer:
         for iter in range(self.params.max_iters - 1):
             loss = 0.0
             if callback is not None:
-                callback(self, loss.item(), iter)
+                callback(self, loss, iter)
             optimizer.zero_grad()
             loss = self.get_value_loss() + self.params.beta * self.get_penalty_loss()
             loss.backward()
@@ -334,10 +334,13 @@ class TrajectoryOptimizerSS(TrajectoryOptimizer):
         assert isinstance(self.trj, SSTrajectory)
         assert isinstance(self.sf, ScoreEstimatorXu)
 
-    def initialize(self):
-        u_trj_init = torch.zeros(self.trj.u_trj.shape).to(self.params.device)
-        u_trj_init += torch.randn_like(u_trj_init) * 0.0
-        self.trj.u_trj = torch.nn.Parameter(u_trj_init)
+    def initialize(self, x_trj_guess, u_trj_guess):
+        if u_trj_guess is None:
+            u_trj_init = torch.zeros(self.trj.u_trj.shape).to(self.params.device)
+            u_trj_init += torch.randn_like(u_trj_init) * 0.1
+            self.trj.u_trj = torch.nn.Parameter(u_trj_init)
+        else:
+            self.trj.u_trj = torch.nn.Parameter(u_trj_guess)
 
     def rollout_trajectory(self):
         """

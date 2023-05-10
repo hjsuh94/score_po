@@ -17,8 +17,7 @@ from score_po.trajectory_optimizer import (
 from score_po.trajectory import BVPTrajectory
 from score_po.costs import QuadraticCost
 
-from examples.light_dark.dynamics import SingleIntegrator
-from examples.light_dark.environment import Environment
+from examples.pendulum.pendulum_keypoint_plant import PendulumPlant
 
 @hydra.main(config_path="./config", config_name="trajopt_diffusion")
 def main(cfg: DictConfig):
@@ -74,8 +73,43 @@ def main(cfg: DictConfig):
             plt.close()
         
     # 5. Run 
-    optimizer = TrajectoryOptimizerNCSF(params)
-    optimizer.iterate(callback)
+    if cfg.optimize_trj:
+        optimizer = TrajectoryOptimizerNCSF(params)
+        optimizer.iterate(callback)
+    else:
+        params.trj.load_state_dict(torch.load(os.path.join(
+        get_original_cwd(), "examples/pendulum/weights/checkpoint.pth"
+    )))
+
+
+    plant = PendulumPlant(cfg.plant_param.dt)
+    x_trj, u_trj = params.trj.get_full_trajectory()
+    x_trj = x_trj.detach().cpu().numpy()
+    x_history = torch.zeros(cfg.trj.T + 1, 2, device=cfg.trj.device)
+    x_history[0] = torch.Tensor([np.pi, 0])
+    x_kp_history = plant.state_to_keypoints(x_history)
+    
+    plt.figure(figsize=(8,8))
+    colormap0 = get_cmap('winter')
+    colormap1 = get_cmap('hot')
+    
+    for t in range(cfg.trj.T):
+        plt.plot(x_trj[t,0], x_trj[t,1], marker='o', color=colormap0(
+            t / (cfg.trj.T + 1)
+        ))
+        x_history[t + 1] = plant.dynamics(x_history[t], u_trj[t])
+        x_kp_history[t + 1] = plant.state_to_keypoints(x_history[t + 1: t + 2])
+        plt.plot(x_kp_history[t,0].cpu().detach().numpy(), x_kp_history[t,1].cpu().detach().numpy(), marker='o', color=colormap1(
+            t / (cfg.trj.T + 1)
+        ))
+
+    theta = np.linspace(0, 2 * np.pi, 100)
+    plt.plot(np.cos(theta) * cfg.pendulum_length, np.sin(theta) * cfg.pendulum_length, linestyle="--")
+    plt.axis("equal")
+    plt.xlim([-1, 1])
+    plt.ylim([-1, 1])
+    plt.savefig("closed_loop.png")
+    plt.close()
 
 
 if __name__ == "__main__":

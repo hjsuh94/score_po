@@ -9,8 +9,8 @@ import score_po.nn
 
 class PendulumPlant(DynamicalSystem):
     """
-    A discrete time pendulum plant.
-    x = [theta, thetadot]
+    A discrete time pendulum keypoint plant.
+    x = [c, s, thetadot]
     """
 
     def __init__(self, dt: float):
@@ -18,7 +18,7 @@ class PendulumPlant(DynamicalSystem):
         Args:
             dt: time step.
         """
-        super().__init__(dim_x=4, dim_u=1)
+        super().__init__(dim_x=3, dim_u=1)
         assert dt > 0
         self.dt = dt
         self.m = 1.0
@@ -27,7 +27,12 @@ class PendulumPlant(DynamicalSystem):
         self.b = 0.1
 
     def dynamics(self, x, u):
-        return self.dynamics_batch(x.reshape((1, -1)), u.reshape((1, -1))).squeeze(0)
+        """
+        Return the next keypoint given the current keypoint and the control input.
+        """
+        state = self.keypoints_to_state(x.reshape((1, -1)))
+        next_state =  self.dynamics_batch(state, u.reshape((1, -1)))
+        return self.state_to_keypoints(next_state).squeeze(0)
 
     def dynamics_batch(self, x_batch, u_batch):
         return midpoint_integration(self.calc_derivative, x_batch, u_batch, self.dt)
@@ -65,6 +70,10 @@ class PendulumPlant(DynamicalSystem):
     def state_to_keypoints(self, x):
         theta = x[:, :1]
         return torch.cat((self.l * torch.cos(theta), self.l * torch.sin(theta), x[:, 1:]), dim=1)
+    
+    def keypoints_to_state(self, x):
+        theta = torch.atan2(x[:, 1:2], x[:, 0:1])
+        return torch.cat((theta, x[:, 2:]), dim=1)
 
 
 class PendulumNNDynamicalSystem(NNDynamicalSystem):
