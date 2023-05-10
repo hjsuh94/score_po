@@ -93,7 +93,7 @@ def main(cfg: DictConfig):
             
     # 5. Run 
     optimizer = TrajectoryOptimizerSS(params)
-    # optimizer.iterate(callback)
+    optimizer.iterate(callback)
 
     true_dyn = PendulumPlant(dt=cfg.plant_param.dt)
     params.ds = true_dyn
