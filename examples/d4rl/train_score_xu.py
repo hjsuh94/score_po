@@ -15,10 +15,11 @@ from score_po.nn import MLPwEmbedding, TrainParams, Normalizer, generate_cosine_
 
 @hydra.main(config_path="./config", config_name="score_training")
 def main(cfg: DictConfig):
+    print(cfg.train.save_best_model)
     env = gym.make(cfg.env_name)
     dim_x = env.observation_space.shape[0]
     dim_u = env.action_space.shape[0]
-    dataset = d4rl.qlearning_dataset(env)
+    dataset = env.get_dataset()
 
     x = torch.Tensor(dataset["observations"])
     u = torch.Tensor(dataset["actions"])
@@ -54,7 +55,8 @@ def main(cfg: DictConfig):
     sf.train_network(
         dataset,
         params,
-        sigma_lst=generate_cosine_schedule(0.3, 0.05, 10),
+        # sigma_lst=generate_cosine_schedule(10.0, 10.0, 10),
+        sigma_lst=torch.logspace(-0.5, -3, 10),
         split=False,
         sample_sigma=True,
     )

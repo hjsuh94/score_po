@@ -4,31 +4,38 @@ defaults:
 hydra:
   run:
     dir: ${user.run_dir}
-
+  sweep:
+    dir: /home/terry/Documents/score_po_data/d4rl_sweep_hopper_medium_expert_2
 
 nn_layers: [256, 256, 256, 256]
 nn_layers_policy: [128, 128]
 env_name: ${user.env_name}
-sigma: 0.05
-trial: 0
 
 cost_weights: ${user.run_dir}/checkpoint_cost_${env_name}.pth
-score_weights: ${user.run_dir}/checkpoint_score_xux_log_1_2_${env_name}.pth
+score_weights: ${user.run_dir}/checkpoint_score_xu_log_${env_name}.pth
+dynamics_weights: ${user.run_dir}/checkpoint_dynamics_${env_name}.pth
 
 warm_start: True
+beta: 0.0
+beta_min: 0.0
+T: 8
+lr: 1.5e-1
+max_iters: 50
+trial: 0
 
 trj:
-  T: 20
+  T: ${T}
+  # when T is too high, autoregressive error kills you.
   x0: [0.8, 0.2]
   xT: [-0.8, 0.2]
   batch_size: 1 # 1 for trajopt.
-  lr: 1e-2
-  max_iters: 2000
+  lr: ${lr} # 5e-2
+  max_iters: ${max_iters}
   save_best_model: null
   saving_period: null
   load_ckpt: null
   device: "cuda"
-  beta: 100.0
+  beta: ${beta}
 
   wandb:
     enabled: ${user.wandb_enabled}
