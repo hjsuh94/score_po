@@ -3,6 +3,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.patches import Polygon
 from torch.utils.data import TensorDataset
+import logging
 
 import hydra
 import pickle
@@ -29,7 +30,7 @@ class MujocoCost(Cost):
         super().__init__()
 
     def get_running_cost_batch(self, z_batch, u_batch):
-        cost_run = z_batch[:, 8]
+        cost_run = -1.0 * z_batch[:, 8]
         cost_ctrl = 0.1 * torch.square(u_batch).sum(dim=1)
         return cost_run + cost_ctrl
 
@@ -77,7 +78,7 @@ def main(cfg: DictConfig):
     cost = QuadraticCost()
     x_diag = torch.zeros(dim_x)
     x_diag[8] = 10.0
-    cost.Q = torch.diag(x_diag)
+    cost.Q = ttorch.diag(x_diag)
     cost.R = 0.1 * torch.diag(torch.ones(dim_u))
     cost.Qd = torch.diag(torch.zeros(dim_x))
     cost.xd = torch.zeros(dim_x)
@@ -91,12 +92,21 @@ def main(cfg: DictConfig):
     # Set upoptimizer
     params.load_from_config(cfg)
     params.to_device(cfg.trj.device)
+    # params.torch_optimizer = torch.optim.RMSprop
     optimizer = TrajectoryOptimizerNCSS(params)
+
+    print(cfg.warm_start)
 
     mpc = MPC(optimizer)
     mpc.warm_start = cfg.warm_start
     evaluator = GymPolicyEvaluator(cfg.env_name, mpc)
-    print(evaluator.get_policy_score())
+
+    logging.info("beta : {:.1f}".format(cfg.beta))
+    logging.info("lr : {:.4f}".format(cfg.trj.lr))
+    logging.info("T : {:02d}".format(cfg.trj.T))
+    logging.info("warm_start: " + str(cfg.warm_start))
+    logging.info("iters: " + str(cfg.max_iters))
+    logging.info("Score: " + str(evaluator.get_policy_score()))
 
 
 if __name__ == "__main__":

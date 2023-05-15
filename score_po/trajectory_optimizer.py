@@ -18,7 +18,12 @@ from score_po.score_matching import (
 from score_po.data_distance import DataDistanceEstimatorXux
 from score_po.costs import Cost
 from score_po.trajectory import Trajectory, IVPTrajectory, BVPTrajectory, SSTrajectory
-from score_po.nn import WandbParams, save_module, tensor_linspace
+from score_po.nn import (
+    WandbParams,
+    save_module,
+    tensor_linspace,
+    generate_cosine_schedule,
+)
 
 
 @dataclass
@@ -77,7 +82,7 @@ class TrajectoryOptimizer:
         pass
 
     def compute_loss(self):
-        return self.get_value_loss(self)
+        return self.get_value_loss()
 
     def initialize(self, x_trj_guess, u_trj_guess):
         if not isinstance(self.trj, SSTrajectory):
@@ -314,6 +319,7 @@ class TrajectoryOptimizerDDE(TrajectoryOptimizer):
 @dataclass
 class TrajectoryOptimizerSSParams(TrajectoryOptimizerParams):
     beta: float = 1.0
+    beta_min: float = 1.0
     sf: ScoreEstimatorXu = None
     ds: DynamicalSystem = None
 
@@ -323,6 +329,10 @@ class TrajectoryOptimizerSSParams(TrajectoryOptimizerParams):
     def load_from_config(self, cfg: DictConfig):
         super().load_from_config(cfg)
         self.beta = cfg.trj.beta
+        if hasattr(cfg.trj, "beta_min"):
+            self.beta_min = cfg.trj.beta_min
+        else:
+            self.beta_min = self.beta
 
     def to_device(self, device):
         super().to_device(device)
@@ -338,6 +348,10 @@ class TrajectoryOptimizerSS(TrajectoryOptimizer):
         self.ds = params.ds
         assert isinstance(self.trj, SSTrajectory)
         assert isinstance(self.sf, ScoreEstimatorXu)
+
+        self.beta_schedule = generate_cosine_schedule(
+            self.params.beta, self.params.beta_min, self.params.max_iters
+        )
 
     def rollout_trajectory(self):
         """
@@ -384,7 +398,8 @@ class TrajectoryOptimizerSS(TrajectoryOptimizer):
         return -score
 
     def compute_loss(self):
-        return self.get_value_loss() + self.params.beta * self.get_penalty_loss()
+        beta = self.beta_schedule[self.iter]
+        return self.get_value_loss() + beta * self.get_penalty_loss()
 
 
 """ Variant of TrajectoryOptimizerSS with Variance annealing """
@@ -470,7 +485,8 @@ class TrajectoryOptimizerDirCol(TrajectoryOptimizer):
         # T x dim_x
         xnext_true = self.ds.dynamics_batch(x_trj[:-1], u_trj)
         error = xnext_true - x_trj[1:]
-        return error.square().sum()
+        x_weights = 1 / self.ds.x_normalizer.k
+        return torch.einsum("Tx,x,Tx->T", error, x_weights, error).sum()
 
     def modify_gradients(self):
         # Modify value loss by applying score function.
@@ -494,6 +510,7 @@ class TrajectoryOptimizerDirCol(TrajectoryOptimizer):
             raise ValueError("Must be BVPTrajectory or IVPTrajectory")
 
     def compute_loss(self):
+        # alpha = self.params.alpha * (self.iter / self.params.max_iters)
         return self.get_value_loss() + self.params.alpha * self.get_dynamics_loss()
 
 
@@ -510,7 +527,6 @@ class TrajectoryOptimizerNCDirCol(TrajectoryOptimizerDirCol):
         return idx, self.sf.sigma_lst[idx]
 
     def modify_gradients(self):
-        print(self.params.beta)
         # Modify value loss by applying score function.
         sigma_idx, sigma = self.get_current_sigma()
         # weight = -1 / sigma ** 2 * self.params.beta

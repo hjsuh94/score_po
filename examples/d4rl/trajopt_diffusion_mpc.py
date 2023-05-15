@@ -28,7 +28,7 @@ class MujocoCost(Cost):
         super().__init__()
 
     def get_running_cost_batch(self, z_batch, u_batch):
-        cost_run = z_batch[:, 8]
+        cost_run = -10.0 * z_batch[:, 8]
         cost_ctrl = 0.1 * torch.square(u_batch).sum(dim=1)
         return cost_run + cost_ctrl
 
@@ -54,8 +54,8 @@ def main(cfg: DictConfig):
 
     # Load learned score function.
     dim_z = dim_x + dim_u + dim_x
-    network_sf = MLPwEmbedding(dim_z, dim_z, 4 * [2048], 10)
-    sf = NoiseConditionedScoreEstimatorXux(dim_x, dim_u, network_sf)
+    network_sf = MLPwEmbedding(dim_z, dim_z, 4 * [1024], 10)
+    sf = NoiseConditionedScoreEstimatorXux(dim_x, dim_u, network_sf, alpha=100)
     sf.load_state_dict(torch.load(cfg.score_weights))
     params.sf = sf
 
@@ -65,7 +65,7 @@ def main(cfg: DictConfig):
     cost.load_state_dict(torch.load(cfg.cost_weights))
     params.cost = cost
 
-    params.cost = MujocoCost()
+    # params.cost = MujocoCost()
 
     """
     cost = QuadraticCost()
@@ -88,6 +88,7 @@ def main(cfg: DictConfig):
     optimizer = TrajectoryOptimizerNCSF(params)
 
     mpc = MPC(optimizer)
+    mpc.warm_start = cfg.warm_start
     evaluator = GymPolicyEvaluator(cfg.env_name, mpc)
     evaluator.get_policy_score()
 

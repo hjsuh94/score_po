@@ -12,8 +12,13 @@ import wandb
 
 from score_po.policy import Policy
 from score_po.nn import (
-    AdamOptimizerParams, WandbParams, TrainParams, Normalizer,
-    EnsembleNetwork, save_module)
+    AdamOptimizerParams,
+    WandbParams,
+    TrainParams,
+    Normalizer,
+    EnsembleNetwork,
+    save_module,
+)
 import score_po.nn
 
 """
@@ -97,9 +102,11 @@ class NNDynamicalSystem(DynamicalSystem):
     def dynamics(self, x, u):
         return self.dynamics_batch(x.unsqueeze(0), u.unsqueeze(0)).squeeze(0)
 
-    def dynamics_batch(self, x_batch, u_batch):
+    def dynamics_batch(self, x_batch, u_batch, sigma=0.0):
         x_normalized = self.x_normalizer(x_batch)
         u_normalized = self.u_normalizer(u_batch)
+        noise = torch.randn_like(x_normalized) * sigma
+        x_normalized += noise
         normalized_input = torch.hstack((x_normalized, u_normalized))
         normalized_output = self.net(normalized_input)
         # we don't use self.x_normalizer.denormalize since in the
@@ -122,13 +129,7 @@ class NNDynamicalSystem(DynamicalSystem):
             when computing the loss.
         """
         B = xu.shape[0]
-        if sigma > 0:
-            noise = torch.normal(0, sigma, size=xu.shape, device=xu.device)
-            databar = xu + noise
-        else:
-            databar = xu
-        pred = self.dynamics_batch(
-            databar[:, : self.dim_x], databar[:, self.dim_x :])
+        pred = self.dynamics_batch(xu[:, : self.dim_x], xu[:, self.dim_x :], sigma)
         if normalize_loss:
             x_next = self.x_normalizer(x_next)
             pred = self.x_normalizer(pred)
@@ -149,13 +150,48 @@ class NNDynamicalSystem(DynamicalSystem):
             )
 
         return score_po.nn.train_network(self, params, dataset, loss, split=True)
-    
+
+    def train_network_simulation(
+        self,
+        dataset: TensorDataset,
+        params: TrainParams,
+        H=6,
+        gamma=0.9,
+    ):
+        """
+        Train network with simulation error. The dataset must contain
+        x[0:H+1}, u[0:H] which is consistent with rollouts under
+        the original dynamics.
+        """
+
+        def loss(tensors, placeholder):
+            x_trj, u_trj = tensors  # B x (H + 1) x dim_x, B x H x dim_u
+            total_loss = 0.0
+            x_pred = torch.zeros_like(x_trj)
+            x_pred[:, 0, :] = x_trj[:, 0, :]
+
+            # Rollout dynamics.
+            for h in range(H):
+                x_pred[:, h + 1, :] = self.dynamics_batch(
+                    x_pred[:, h, :], u_trj[:, h, :]
+                )
+
+            # Compute loss.
+            for h in range(H + 1):
+                total_loss += (
+                    gamma**h
+                    * (x_pred[:, h, :] - x_trj[:, h, :]).square().sum(dim=-1).mean()
+                )
+            return total_loss
+
+        return score_po.nn.train_network(self, params, dataset, loss, split=True)
+
     def save_ensemble(self, foldername):
         if not os.path.exists(foldername):
             os.mkdir(foldername)
         for k, ds in enumerate(self.ds_lst):
             save_module(ds, os.path.join(foldername, "{:02d}.pth".format(k)))
-    
+
 
 class NNEnsembleDynamicalSystem(DynamicalSystem):
     """
@@ -188,9 +224,9 @@ class NNEnsembleDynamicalSystem(DynamicalSystem):
             if u_normalizer is None
             else u_normalizer
         )
-        
+
         self.ds_lst = ds_lst
-        self.check_input_consistency()        
+        self.check_input_consistency()
         self.define_vmap()
 
     def check_input_consistency(self):
@@ -199,24 +235,22 @@ class NNEnsembleDynamicalSystem(DynamicalSystem):
 
     def dynamics(self, x, u):
         return self.dynamics_batch(x.unsqueeze(1), u.unsqueeze(1)).squeeze(1)
-    
+
     def dynamics_batch_single(self, x_batch, u_batch, i):
         """
         Get dynamics_batch for a single ensemble model.
         """
         return self.ds_lst[i].dynamics_batch(x_batch, u_batch)
-    
+
     def define_vmap(self):
         base_model = copy.deepcopy(self.ds_lst[0])
-        base_model = base_model.to('meta')
-        self.esb_params, self.esb_buffers = torch.func.stack_module_state(
-            self.ds_lst)
-        
+        base_model = base_model.to("meta")
+        self.esb_params, self.esb_buffers = torch.func.stack_module_state(self.ds_lst)
+
         def fmodel(params, buffers, x, u):
-            return torch.func.functional_call(base_model, (
-                params, buffers), (x, u))
-            
-        self.map = torch.vmap(fmodel)        
+            return torch.func.functional_call(base_model, (params, buffers), (x, u))
+
+        self.map = torch.vmap(fmodel)
 
     def dynamics_batch(self, x_batch, u_batch):
         """
@@ -225,8 +259,9 @@ class NNEnsembleDynamicalSystem(DynamicalSystem):
         It will return a xnext_batch of shape
         (ensemble_size, batch_size, dim_x).
         """
-        if ((x_batch.shape[0] != len(self.ds_lst)) or
-            (u_batch.shape[0] != len(self.ds_lst))):
+        if (x_batch.shape[0] != len(self.ds_lst)) or (
+            u_batch.shape[0] != len(self.ds_lst)
+        ):
             raise ValueError("Leading dimension must equal ensemble size.")
         return self.map(self.esb_params, self.esb_buffers, x_batch, u_batch)
 
@@ -234,7 +269,12 @@ class NNEnsembleDynamicalSystem(DynamicalSystem):
         return self.dynamics_batch(x, u)
 
     def evaluate_dynamic_loss(
-        self, xu, x_next, k, sigma=0.0,normalize_loss: bool = False,
+        self,
+        xu,
+        x_next,
+        k,
+        sigma=0.0,
+        normalize_loss: bool = False,
     ):
         """
         Evaluate L2 loss.
@@ -249,10 +289,12 @@ class NNEnsembleDynamicalSystem(DynamicalSystem):
         if sigma > 0:
             noise = torch.normal(0, sigma, size=xu.shape, device=xu.device)
             databar = xu + noise
+            print("noise")
         else:
             databar = xu
         pred = self.dynamics_batch_single(
-            databar[:,: self.dim_x], databar[:,self.dim_x :], k)
+            databar[:, : self.dim_x], databar[:, self.dim_x :], k
+        )
         if normalize_loss:
             x_next = self.x_normalizer(x_next)
             pred = self.x_normalizer(pred)
@@ -271,23 +313,24 @@ class NNEnsembleDynamicalSystem(DynamicalSystem):
             if (new_params.save_best_model) is not None:
                 filename, ext = os.path.splitext(new_params.save_best_model)
                 new_params.save_best_model = filename + "_{:02d}".format(k) + ext
-                
+
             def loss(tensors, placeholder):
                 x, u, x_next = tensors
                 return self.evaluate_dynamic_loss(
                     torch.cat((x, u), dim=-1), x_next, k, sigma=sigma
                 )
-                    
+
             loss_lst = score_po.nn.train_network(
-                ds, new_params, dataset, loss, split=True)
+                ds, new_params, dataset, loss, split=True
+            )
             loss_lst_esb.append(loss_lst)
         return loss_lst_esb
-            
+
     def load_ensemble(self, filename):
         for k, ds in enumerate(self.ds_lst):
             pre, ext = os.path.splitext(filename)
             ds.load_state_dict(torch.load(pre + "_{:02d}".format(k) + ext))
-            
+
     def to(self, device):
         for ds in self.ds_lst:
             ds.to(device)

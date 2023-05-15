@@ -83,6 +83,11 @@ class MPC:
                 x_trj_guess, u_trj_guess = self.shift_trajectory(
                     self.x_trj_last, self.u_trj_last
                 )
+                k_x = self.opt.sf.x_normalizer.k
+                k_u = self.opt.sf.u_normalizer.k
+                if x_trj_guess is not None:
+                    x_trj_guess += torch.randn_like(x_trj_guess) * 0.0 * k_x
+                u_trj_guess += torch.randn_like(u_trj_guess) * 0.0
         else:
             x_trj_guess, u_trj_guess = None, None
 
