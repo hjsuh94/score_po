@@ -5,27 +5,23 @@ hydra:
   run:
     dir: ${user.run_dir}
 
-box_width: 0.1
-box_height: 0.2
-dataset_size: 200000
-plot_data: True
-nn_layers: [128, 128, 128, 128, 128]
-
-max_iters: 400
-step_size: 1e-3
+dataset_dir: ${user.dataset_dir}
+score_weights: "/home/terry/Documents/score_po_data/box_keypoints/checkpoint_score_xu.pth"
+max_iters: 1000
+step_size: 1e-4
 
 train:
   wandb:
     enabled: ${user.wandb_enabled}
-    project: score_po
+    project: score_po_keypts
     dir: ${user.run_dir}
     name: ${now:%Y.%m.%d-%H.%M.%S}_keypoint_score
     entity: ${user.wandb_entity}  
   adam:
-    lr: 1e-4
-    epochs: 100
+    lr: 1e-3
+    epochs: 1000
     batch_size: 1024
   dataset_split: null    
-  save_best_model: checkpoint.pth
+  save_best_model: checkpoint_score_xu.pth
   load_ckpt: null
   device: "cuda"  

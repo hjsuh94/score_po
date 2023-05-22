@@ -3,6 +3,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.patches import Polygon
 import os, time
+import lcm
 
 import hydra
 from omegaconf import DictConfig
@@ -15,7 +16,7 @@ from pydrake.systems.lcm import (
     LcmPublisherSystem,
 )
 
-from pydrake.all import Quaternion
+from pydrake.all import Quaternion, IiwaStatusReceiver, IiwaCommandSender
 from pydrake.geometry import (
     MeshcatVisualizer,
     StartMeshcat,
@@ -47,12 +48,65 @@ from pydrake.all import (
     MultibodyPlant,
     InverseDynamicsController,
     StateInterpolatorWithDiscreteDerivative,
+    LeafSystem,
+    AbstractValue,
 )
 
 from drake import lcmt_iiwa_status, lcmt_iiwa_command, lcmt_robot_state
+import optitrack
 
 
 from score_po.dynamical_system import DynamicalSystem
+
+
+def planar_to_full_coordinates(x):
+    """Given x in planar coordinates, convert to full coordinates."""
+    box_dim = np.array([0.0867, 0.1703, 0.0391])
+    theta = x[2]
+    q_wxyz = Quaternion(RotationMatrix(RollPitchYaw([0, 0, theta])).matrix()).wxyz()
+    p_xyz = np.array([x[0], x[1], box_dim[2]])
+    return np.concatenate((q_wxyz, p_xyz))
+
+
+def full_to_planar_coordinates(x):
+    """Given x in full coordinates, convert to planar coordinates."""
+    q_wxyz = x[0:4] / np.linalg.norm(x[0:4])
+    p_xyz = x[4:7]
+
+    theta = RollPitchYaw(Quaternion(q_wxyz)).vector()[2]
+    return np.concatenate((p_xyz[0:2], np.array([theta])))
+
+
+def get_keypoints(x):
+    """
+    Get keypoints given pose x.
+    Optionally accepts whether to visualize, the path to meshcat,
+    and injected noise.
+    """
+    canon_points = np.array(
+        [
+            [1, -1, -1, 1, 0],
+            [1, 1, -1, -1, 0],
+            [1, 1, 1, 1, 1],
+        ]
+    )
+    box_dim = np.array([0.0867, 0.1703, 0.0391])
+    # These dimensions come from the ycb dataset on 004_sugar_box.sdf
+    # Make homogeneous coordinates
+    keypoints = np.zeros((4, 5))
+    keypoints[0, :] = box_dim[0] * canon_points[0, :] / 2
+    keypoints[1, :] = box_dim[1] * canon_points[1, :] / 2
+    keypoints[2, :] = box_dim[2]
+    keypoints[3, :] = 1
+
+    # transform according to pose x.
+    X_WB = RigidTransform(
+        RollPitchYaw(np.array([0.0, 0.0, x[2]])), np.array([x[0], x[1], 0.0])
+    ).GetAsMatrix4()
+
+    X_WK = X_WB @ keypoints
+    X_WK[0:2] = X_WK[0:2]
+    return X_WK[0:2, :]
 
 
 class ManipulationDiagram(Diagram):
@@ -65,6 +119,13 @@ class ManipulationDiagram(Diagram):
         # These dimensions come from the ycb dataset on 004_sugar_box.sdf
         # The elements corresponds to box_width along [x,y,z] dimension.
         self.box_dim = np.array([0.0867, 0.1703, 0.0391])
+        self.meshcat.SetTransform(
+            path="/Cameras/default",
+            matrix=RigidTransform(
+                RollPitchYaw([-np.pi / 8, 0.0, np.pi / 2]),
+                0.01 * np.array([0.05, 0.0, 0.1]),
+            ).GetAsMatrix4(),
+        )
 
         # Parse model directives and add mbp.
         builder = DiagramBuilder()
@@ -82,10 +143,15 @@ class ManipulationDiagram(Diagram):
         self.pusher = self.mbp.GetModelInstanceByName("pusher")
         self.iiwa = self.mbp.GetModelInstanceByName("iiwa")
 
+        self.box_index = self.mbp.GetBodyByName("base_link_sugar").index()
+
         # Add visualizer.
         self.visualizer = MeshcatVisualizer.AddToBuilder(builder, self.sg, self.meshcat)
 
         self.add_controller(builder)
+        # Export states
+        builder.ExportOutput(self.mbp.get_body_poses_output_port(), "body_poses")
+        builder.BuildInto(self)
 
     def add_controller(self, builder):
         ctrl_plant = MultibodyPlant(1e-3)
@@ -96,9 +162,9 @@ class ManipulationDiagram(Diagram):
         )
         ProcessModelDirectives(directives, ctrl_plant, parser)
         ctrl_plant.Finalize()
-        kp = 4000 * np.ones(7)
-        ki = 0 * np.ones(7)
-        kd = 5 * np.sqrt(kp)
+        kp = 800 * np.ones(7)
+        ki = 100 * np.ones(7)
+        kd = 2 * np.sqrt(kp)
         arm_controller = builder.AddSystem(
             InverseDynamicsController(ctrl_plant, kp, ki, kd, False)
         )
@@ -152,10 +218,39 @@ class ManipulationDiagram(Diagram):
             "iiwa_torque_external",
         )
 
-        builder.BuildInto(self)
+
+class KeyptsLCM(LeafSystem):
+    def __init__(self, box_index):
+        LeafSystem.__init__(self)
+        # self.Abstract
+        self.box_index = box_index
+        self.lc = lcm.LCM()
+        self.input_port = self.DeclareAbstractInputPort(
+            "body_poses", AbstractValue.Make([RigidTransform()])
+        )
+        self.DeclarePeriodicPublishEvent(1.0 / 200.0, 0.0, self.publish)
+
+    def publish(self, context):
+        X_WB = self.get_input_port().Eval(context)[self.box_index]
+        q_wxyz = Quaternion(X_WB.rotation().matrix()).wxyz()
+        p_xyz = X_WB.translation()
+        qp_WB = np.concatenate((q_wxyz, p_xyz))
+        xyt_WB = full_to_planar_coordinates(qp_WB)
+
+        keypts = get_keypoints(xyt_WB)
+        keypts = np.concatenate((keypts, np.zeros((1, 5))))
+
+        sub_msg = optitrack.optitrack_marker_set_t()
+        sub_msg.num_markers = 5
+        sub_msg.xyz = keypts.T
+        msg = optitrack.optitrack_frame_t()
+        msg.utime = int(time.time() * 1e6)
+        msg.num_marker_sets = 1
+        msg.marker_sets = [sub_msg]
+        self.lc.publish("KEYPTS", msg.encode())
 
 
-class ManipulationLCMSystem:
+class MockManipulation:
     """
     Planar pushing dynamical system, implemented in Drake.
     x: position of box and pusher, [x_box, y_box, theta_box, x_pusher, y_pusher]
@@ -166,19 +261,27 @@ class ManipulationLCMSystem:
         builder = DiagramBuilder()
         self.station = builder.AddSystem(ManipulationDiagram())
         self.connect_lcm(builder, self.station)
+        self.keypts_lcm = builder.AddSystem(KeyptsLCM(self.station.box_index))
+        builder.Connect(
+            self.station.GetOutputPort("body_poses"), self.keypts_lcm.get_input_port()
+        )
 
-        # Build and add simulator.
-        self.diagram = builder.Build()
+        diagram = builder.Build()
+        self.simulator = Simulator(diagram)
+        self.simulator.set_target_realtime_rate(1.0)
 
-        self.simulator = Simulator(self.diagram)
         self.set_default_joint_position()
         self.set_default_box_position()
-        self.simulator.AdvanceTo(0.01)
+
+    def run(self, timeout=1e8):
+        self.simulator.AdvanceTo(timeout)
 
     def set_default_joint_position(self):
         context = self.simulator.get_mutable_context()
         mbp_context = self.station.mbp.GetMyContextFromRoot(context)
-        self.default_joint_position = np.array([0.0, 0.6, 0.0, -1.75, 0.0, 1.0, 0.0])
+        self.default_joint_position = np.array(
+            [0.666, 1.039, -0.7714, -2.0497, 1.3031, 0.6729, -1.0252]
+        )
         self.station.mbp.SetPositions(
             mbp_context, self.station.iiwa, self.default_joint_position
         )
@@ -186,8 +289,8 @@ class ManipulationLCMSystem:
     def set_default_box_position(self):
         context = self.simulator.get_mutable_context()
         mbp_context = self.station.mbp.GetMyContextFromRoot(context)
-        self.default_box_position = self.planar_to_full_coordinates(
-            np.array([0.7, 0.0, 0.0])
+        self.default_box_position = planar_to_full_coordinates(
+            np.array([0.5, 0.0, 0.0])
         )
         self.station.mbp.SetPositions(
             mbp_context, self.station.box, self.default_box_position
@@ -262,62 +365,6 @@ class ManipulationLCMSystem:
             iiwa_status.get_output_port(), iiwa_status_publisher.get_input_port()
         )
 
-    def run(self, timeout=1e8):
-        self.simulator.AdvanceTo(timeout)
 
-    def planar_to_full_coordinates(self, x):
-        """Given x in planar coordinates, convert to full coordinates."""
-        theta = x[2]
-        q_wxyz = Quaternion(RotationMatrix(RollPitchYaw([0, 0, theta])).matrix()).wxyz()
-        p_xyz = np.array([x[0], x[1], self.station.box_dim[2]])
-        return np.concatenate((q_wxyz, p_xyz))
-
-    def full_to_planar_coordinates(self, x):
-        """Given x in full coordinates, convert to planar coordinates."""
-        q_wxyz = x[0:4] / np.linalg.norm(x[0:4])
-        p_xyz = x[4:7]
-
-        theta = RollPitchYaw(Quaternion(q_wxyz)).vector()[2]
-        return np.concatenate((p_xyz[0:2], np.array([theta])))
-
-    def get_keypoints(self, x, visualize=False, path="keypoints", noise_std=0.0):
-        """
-        Get keypoints given pose x.
-        Optionally accepts whether to visualize, the path to meshcat,
-        and injected noise.
-        """
-        canon_points = np.array(
-            [
-                [1, -1, -1, 1, 0],
-                [1, 1, -1, -1, 0],
-                [1, 1, 1, 1, 1],
-            ]
-        )
-        # These dimensions come from the ycb dataset on 004_sugar_box.sdf
-        # Make homogeneous coordinates
-        keypoints = np.zeros((4, 5))
-        keypoints[0, :] = self.station.box_dim[0] * canon_points[0, :] / 2
-        keypoints[1, :] = self.station.box_dim[1] * canon_points[1, :] / 2
-        keypoints[2, :] = self.station.box_dim[2]
-        keypoints[3, :] = 1
-
-        # transform according to pose x.
-        X_WB = RigidTransform(
-            RollPitchYaw(np.array([0.0, 0.0, x[2]])), np.array([x[0], x[1], 0.0])
-        ).GetAsMatrix4()
-
-        X_WK = X_WB @ keypoints
-        X_WK[0:2] = X_WK[0:2] + noise_std * np.random.randn(*X_WK[0:2].shape)
-
-        if visualize:
-            cloud = PointCloud(5)
-            cloud.mutable_xyzs()[:] = X_WK[0:3, :]
-            self.meshcat.SetObject(
-                path=path, cloud=cloud, point_size=0.02, rgba=Rgba(0.5, 0.0, 0.0)
-            )
-
-        return X_WK[0:2, :]
-
-
-simulator = ManipulationLCMSystem()
-simulator.run()
+a = MockManipulation()
+a.run()
