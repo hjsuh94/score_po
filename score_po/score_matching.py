@@ -203,6 +203,11 @@ class ScoreEstimatorXux(torch.nn.Module):
           network: A network ϕ that outputs ϕ(z̅) ≈ ∇_z̅ log p(z̅), where z̅ is the
           normalized data.
           z_normalizer: The normalizer for z.
+
+        We also use a scalar variable alpha to weight the normalization on xnext
+        differently from normalization on x,u during the training process which
+        gives us a handle to penalize dynamics error more in log p(x,u,xnext) formulation.
+        A higher value of alpha will penalize dynamics error more.
         """
         super().__init__()
         self.dim_x = dim_x
