@@ -250,7 +250,7 @@ class NNEnsembleDynamicalSystem(DynamicalSystem):
         def fmodel(params, buffers, x, u):
             return torch.func.functional_call(base_model, (params, buffers), (x, u))
 
-        self.map = torch.vmap(fmodel)
+        self.map = torch.vmap(fmodel, randomness="different")
 
     def dynamics_batch(self, x_batch, u_batch):
         """
