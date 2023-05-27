@@ -15,7 +15,7 @@ from score_po.score_matching import (
     NoiseConditionedScoreEstimatorXu,
     NoiseConditionedScoreEstimatorXux,
 )
-from score_po.data_distance import DataDistanceEstimatorXux
+from score_po.data_distance import DataDistanceEstimatorXux, DataDistanceEstimatorXu
 from score_po.costs import Cost
 from score_po.trajectory import Trajectory, IVPTrajectory, BVPTrajectory, SSTrajectory
 from score_po.nn import (
@@ -608,9 +608,7 @@ class TrajectoryOptimizerSSEnsemble(TrajectoryOptimizer):
 
 
 @dataclass
-class CEMEnsembleParams(TrajectoryOptimizerParams):
-    beta: float = 1.0
-    ds: DynamicalSystem = None
+class CEMParams(TrajectoryOptimizerParams):
     n_elite: int = 3
     batch_size: int = 10
     std: float = 0.05
@@ -620,30 +618,32 @@ class CEMEnsembleParams(TrajectoryOptimizerParams):
 
     def load_from_config(self, cfg: DictConfig):
         super().load_from_config(cfg)
-        self.beta = cfg.trj.beta
+        if hasattr(cfg.trj, "n_elite"):
+            self.n_elite = cfg.trj.n_elite
+        if hasattr(cfg.trj, "batch_size"):
+            self.batch_size = cfg.trj.batch_size
         self.std = cfg.trj.std
 
     def to_device(self, device):
         super().to_device(device)
-        if isinstance(self.ds, torch.nn.Module):
-            self.ds.to(device)
 
 
-class CEMEnsemble(TrajectoryOptimizerSSEnsemble):
-    def __init__(self, params: CEMEnsembleParams, **kwargs):
+class CEM(TrajectoryOptimizerSS):
+    params: CEMParams
+    def __init__(self, params: CEMParams, **kwargs):
         super().__init__(params)
 
     def update_trajectory(self):
-        u_trj_batch = torch.cat(self.params.batch_size * [self.trj.u_trj[None, :]])
-        u_trj_batch += torch.randn_like(u_trj_batch) * self.params.std
+        u_trj_batch = self.trj.u_trj.unsqueeze(0).repeat(
+            [self.params.batch_size] + [1] * self.trj.u_trj.ndim
+        )
+        u_trj_batch += torch.randn_like(u_trj_batch) * self.params.save_best_model
         cost_lst = torch.zeros(self.params.batch_size).to(self.params.device)
         for b in range(self.params.batch_size):
-            self.trj.u_trj = torch.nn.Parameter(u_trj_batch[b, :, :])
-            cost_lst[b] = (
-                self.get_value_loss() + self.params.beta * self.get_penalty_loss()
-            )
-        _, ind = torch.topk(cost_lst, self.params.n_elite, largest=False)
-        next_trj = u_trj_batch[ind, :, :].mean(dim=0)
+            self.trj.u_trj = torch.nn.Parameter(u_trj_batch[b])
+            cost_lst[b] = self.compute_loss()
+        _, ind = torch.topk(cost_lst, self.params.n_elite)
+        next_trj = u_trj_batch[ind].mean(dim=0)
         self.trj.u_trj = torch.nn.Parameter(next_trj)
 
     def compute_loss(self):
@@ -666,12 +666,12 @@ class CEMEnsemble(TrajectoryOptimizerSSEnsemble):
                 config=self.params.wandb_params.config,
                 entity=self.params.wandb_params.entity,
             )
-
+        
         self.trj = self.trj.to(self.params.device)
         self.initialize()
         self.trj.train()
 
-        loss = self.get_value_loss()
+        loss = self.compute_loss()
 
         start_time = time.time()
         print("Iteration: {:04d} | Cost: {:.3f} | Time: {:.3f}".format(0, loss, 0))
@@ -681,7 +681,7 @@ class CEMEnsemble(TrajectoryOptimizerSSEnsemble):
         for iter in range(self.params.max_iters - 1):
             if callback is not None:
                 callback(self, loss.item(), iter)
-
+            
             self.update_trajectory()
             loss = self.compute_loss()
             self.cost_lst[iter + 1] = loss.item()
@@ -707,3 +707,53 @@ class CEMEnsemble(TrajectoryOptimizerSSEnsemble):
             self.iter += 1
 
         return self.cost_lst
+
+
+@dataclass
+class CEMEnsembleParams(CEMParams):
+    beta: float = 1.0
+    ds: DynamicalSystem = None
+
+    def __init__(self):
+        super().__init__()
+
+    def load_from_config(self, cfg: DictConfig):
+        super().load_from_config(cfg)
+        self.beta = cfg.trj.beta
+
+    def to_device(self, device):
+        super().to_device(device)
+        if isinstance(self.ds, torch.nn.Module):
+            self.ds.to(device)
+
+
+class CEMEnsemble(CEM, TrajectoryOptimizerSSEnsemble):
+    # Both CEM and TrajectoryOptimizerSSEnsemble define iterate() function, but we
+    # want to use CEM's iterate function, so we put CEM before
+    # TrajectoryOptimizerSSEnsemble
+    def __init__(self, params: CEMEnsembleParams, **kwargs):
+        super().__init__(params)
+
+
+@dataclass
+class CEMDataDistanceEstimatorParams(CEMParams):
+    beta: float = 1.0
+    dde: DataDistanceEstimatorXu = None
+
+    def __init__(self):
+        super().__init__()
+
+    def load_from_config(self, cfg: DictConfig):
+        super().load_from_config(cfg)
+        self.beta = cfg.trj.beta
+
+    def to_device(self, device):
+        super().to_device(device)
+        if isinstance(self.ds, torch.nn.Module):
+            self.dde.to(device)
+
+class CEMDataDistanceEstimator(CEM):
+    # Both CEM and TrajectoryOptimizerDDE define iterate() function, but we
+    # want to use CEM's iterate function, so we put CEM before TrajectoryOptimizerDDE.
+    def __init__(self, params: CEMDataDistanceEstimatorParams, **kwargs):
+        super().__init__(params)
