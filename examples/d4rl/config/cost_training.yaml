@@ -6,7 +6,7 @@ hydra:
     dir: ${user.run_dir}
 
 
-nn_layers: [256, 256, 256, 256]
+nn_layers: [1024, 1024, 1024, 1024]
 env_name: ${user.env_name}
 
 # Train parameters

@@ -9,11 +9,10 @@ hydra:
 nn_layers: [256, 256, 256, 256]
 nn_layers_policy: [128, 128]
 env_name: ${user.env_name}
-sigma: 0.05
-trial: 0
 
-cost_weights: ${user.run_dir}/checkpoint_cost_${env_name}.pth
-score_weights: ${user.run_dir}/checkpoint_score_xux_log_1_2_${env_name}.pth
+cost_weights: ${user.cost_weights}
+score_weights: /home/terry/Documents/score_po_data/d4rl/checkpoint_score_xu_4_${env_name}.pth
+dynamics_weights: ${user.dynamics_weights}
 
 warm_start: True
 
@@ -22,13 +21,14 @@ trj:
   x0: [0.8, 0.2]
   xT: [-0.8, 0.2]
   batch_size: 1 # 1 for trajopt.
-  lr: 1e-2
-  max_iters: 2000
+  lr: 1e-1
+  max_iters: 200
   save_best_model: null
   saving_period: null
   load_ckpt: null
   device: "cuda"
-  beta: 100.0
+  alpha: 10000.0
+  beta: 1.0
 
   wandb:
     enabled: ${user.wandb_enabled}

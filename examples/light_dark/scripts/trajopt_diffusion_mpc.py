@@ -46,7 +46,7 @@ def main(cfg: DictConfig):
     params.cost = cost
 
     # 4. Set up trajectory.
-    trj = IVPTrajectory(2, 2, 5, torch.Tensor(cfg.trj.x0))
+    trj = IVPTrajectory(2, 2, cfg.trj.T, torch.Tensor(cfg.trj.x0))
     params.trj = trj
 
     # 4. Set up optimizer

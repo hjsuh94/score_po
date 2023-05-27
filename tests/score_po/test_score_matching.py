@@ -32,10 +32,7 @@ class TestScoreEstimatorXu:
                 k=torch.tensor([1, 2.0, 3.0]),
                 b=torch.tensor([0, 0.5, 1]),
             ),
-            u_normalizer=Normalizer(
-                k=torch.tensor([4.0, 5]),
-                b=torch.Tensor([1.5, 2])
-            )
+            u_normalizer=Normalizer(k=torch.tensor([4.0, 5]), b=torch.Tensor([1.5, 2])),
         )
 
     @pytest.mark.parametrize("device", ("cpu", "cuda"))
@@ -44,31 +41,35 @@ class TestScoreEstimatorXu:
         (
             None,
             Normalizer(k=torch.tensor([2.0, 3.0]), b=torch.tensor([-1, -2])),
-        )
+        ),
     )
     @pytest.mark.parametrize(
         "u_normalizer",
         (
             None,
             Normalizer(k=torch.tensor([4.0]), b=torch.tensor([-3.0])),
-        )
-    )    
-    def test_score_eval(self, device: Literal["cpu", "cuda"], x_normalizer, u_normalizer):
+        ),
+    )
+    def test_score_eval(
+        self, device: Literal["cpu", "cuda"], x_normalizer, u_normalizer
+    ):
         x_tensor = torch.rand(100, 2).to(device)
         u_tensor = torch.rand(100, 1).to(device)
         z_tensor = torch.cat((x_tensor, u_tensor), dim=1)
 
         network = MLP(3, 3, [128, 128])
         sf = mut.ScoreEstimatorXu(2, 1, network, x_normalizer, u_normalizer)
-        
-        z_normalized = torch.cat((
-            sf.x_normalizer.to(device)(x_tensor),
-            sf.u_normalizer.to(device)(u_tensor)
-        ), dim=1)
-        
-        score_z_expected = (
-            network.to(device)(z_normalized)
-            / torch.cat((sf.x_normalizer.to(device).k, sf.u_normalizer.to(device).k))
+
+        z_normalized = torch.cat(
+            (
+                sf.x_normalizer.to(device)(x_tensor),
+                sf.u_normalizer.to(device)(u_tensor),
+            ),
+            dim=1,
+        )
+
+        score_z_expected = network.to(device)(z_normalized) / torch.cat(
+            (sf.x_normalizer.to(device).k, sf.u_normalizer.to(device).k)
         )
         np.testing.assert_allclose(
             sf.get_score_z_given_z(z_tensor).cpu().detach().numpy(),
@@ -121,10 +122,7 @@ class TestScoreEstimatorXux:
                 k=torch.tensor([1, 2.0, 3.0]),
                 b=torch.tensor([0, 0.5, 1]),
             ),
-            u_normalizer=Normalizer(
-                k=torch.tensor([4.0, 5]),
-                b=torch.Tensor([1.5, 2])
-            )
+            u_normalizer=Normalizer(k=torch.tensor([4.0, 5]), b=torch.Tensor([1.5, 2])),
         )
 
     @pytest.mark.parametrize("device", ("cpu", "cuda"))
@@ -133,36 +131,45 @@ class TestScoreEstimatorXux:
         (
             None,
             Normalizer(k=torch.tensor([2.0, 3.0]), b=torch.tensor([-1, -2])),
-        )
+        ),
     )
     @pytest.mark.parametrize(
         "u_normalizer",
         (
             None,
             Normalizer(k=torch.tensor([4.0]), b=torch.tensor([-3.0])),
-        )
-    )    
-    def test_score_eval(self, device: Literal["cpu", "cuda"], x_normalizer, u_normalizer):
+        ),
+    )
+    def test_score_eval(
+        self, device: Literal["cpu", "cuda"], x_normalizer, u_normalizer
+    ):
         x_tensor = torch.rand(100, 2).to(device)
         u_tensor = torch.rand(100, 1).to(device)
         xnext_tensor = torch.rand(100, 2).to(device)
-        
+
         z_tensor = torch.cat((x_tensor, u_tensor, xnext_tensor), dim=1)
 
         network = MLP(5, 5, [128, 128])
         sf = mut.ScoreEstimatorXux(2, 1, network, x_normalizer, u_normalizer)
-        
-        z_normalized = torch.cat((
-            sf.x_normalizer.to(device)(x_tensor),
-            sf.u_normalizer.to(device)(u_tensor),
-            sf.x_normalizer.to(device)(xnext_tensor),            
-        ), dim=1)
-        
-        score_z_expected = (
-            network.to(device)(z_normalized)
-            / torch.cat(
-                (sf.x_normalizer.to(device).k, sf.u_normalizer.to(device).k,
-                 sf.x_normalizer.to(device).k))
+        sf.x_normalizer.to(device)
+        sf.u_normalizer.to(device)
+        sf.xnext_normalizer.to(device)
+
+        z_normalized = torch.cat(
+            (
+                sf.x_normalizer.to(device)(x_tensor),
+                sf.u_normalizer.to(device)(u_tensor),
+                sf.x_normalizer.to(device)(xnext_tensor),
+            ),
+            dim=1,
+        )
+
+        score_z_expected = network.to(device)(z_normalized) / torch.cat(
+            (
+                sf.x_normalizer.to(device).k,
+                sf.u_normalizer.to(device).k,
+                sf.x_normalizer.to(device).k,
+            )
         )
         np.testing.assert_allclose(
             sf.get_score_z_given_z(z_tensor).cpu().detach().numpy(),
@@ -229,3 +236,7 @@ def test_langevin_dynamics(device):
         mean.cpu().detach().numpy(),
         atol=0.2,
     )
+
+
+a = TestScoreEstimatorXux()
+a.test_score_eval("cuda", None, None)

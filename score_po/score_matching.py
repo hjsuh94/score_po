@@ -190,6 +190,7 @@ class ScoreEstimatorXux(torch.nn.Module):
         network,
         x_normalizer: Normalizer = None,
         u_normalizer: Normalizer = None,
+        alpha=1.0,
     ):
         """
         We denote z̅ as z after normalization, namely
@@ -202,6 +203,11 @@ class ScoreEstimatorXux(torch.nn.Module):
           network: A network ϕ that outputs ϕ(z̅) ≈ ∇_z̅ log p(z̅), where z̅ is the
           normalized data.
           z_normalizer: The normalizer for z.
+
+        We also use a scalar variable alpha to weight the normalization on xnext
+        differently from normalization on x,u during the training process which
+        gives us a handle to penalize dynamics error more in log p(x,u,xnext) formulation.
+        A higher value of alpha will penalize dynamics error more.
         """
         super().__init__()
         self.dim_x = dim_x
@@ -216,6 +222,9 @@ class ScoreEstimatorXux(torch.nn.Module):
             Normalizer(k=torch.ones(dim_u), b=torch.zeros(dim_u))
             if u_normalizer is None
             else u_normalizer
+        )
+        self.xnext_normalizer: Normalizer = Normalizer(
+            k=self.x_normalizer.k / alpha, b=self.x_normalizer.b
         )
         self.register_buffer("sigma", torch.ones(1))
         self.check_input_consistency()
@@ -246,7 +255,7 @@ class ScoreEstimatorXux(torch.nn.Module):
         x, u, xnext = self.get_xux_from_z(z)
         xbar = self.x_normalizer(x)
         ubar = self.u_normalizer(u)
-        xnextbar = self.x_normalizer(xnext)
+        xnextbar = self.xnext_normalizer(xnext)
         zbar = self.get_z_from_xux(xbar, ubar, xnextbar)
         return zbar
 
@@ -272,7 +281,7 @@ class ScoreEstimatorXux(torch.nn.Module):
         """
         zbar = self.normalize_z(z)
         return self._get_score_zbar_given_zbar(zbar) / torch.cat(
-            (self.x_normalizer.k, self.u_normalizer.k, self.x_normalizer.k)
+            (self.x_normalizer.k, self.u_normalizer.k, self.xnext_normalizer.k)
         )
 
     def forward(self, z):
@@ -424,8 +433,9 @@ class NoiseConditionedScoreEstimatorXux(ScoreEstimatorXux):
         network: MLPwEmbedding,
         x_normalizer: Normalizer = None,
         u_normalizer: Normalizer = None,
+        alpha=1.0,
     ):
-        super().__init__(dim_x, dim_u, network, x_normalizer, u_normalizer)
+        super().__init__(dim_x, dim_u, network, x_normalizer, u_normalizer, alpha)
         self.register_buffer("sigma_lst", torch.ones(network.embedding_size))
 
     def _get_score_zbar_given_zbar(self, zbar, i):
@@ -442,7 +452,7 @@ class NoiseConditionedScoreEstimatorXux(ScoreEstimatorXux):
         """
         zbar = self.normalize_z(z)
         return self._get_score_zbar_given_zbar(zbar, i) / torch.cat(
-            (self.x_normalizer.k, self.u_normalizer.k, self.x_normalizer.k)
+            (self.x_normalizer.k, self.u_normalizer.k, self.xnext_normalizer.k)
         )
 
     def evaluate_loss(self, x_batch, u_batch, xnext_batch, i):
