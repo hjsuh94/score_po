@@ -12,8 +12,8 @@ from omegaconf import DictConfig
 from score_po.score_matching import NoiseConditionedScoreEstimatorXu
 from score_po.nn import MLPwEmbedding, TrainParams, MLP
 from score_po.trajectory_optimizer import (
-    TrajectoryOptimizerDirColParams,
-    TrajectoryOptimizerNCDirCol,
+    TrajectoryOptimizerDirTranParams,
+    TrajectoryOptimizerNCDirTran,
 )
 from score_po.dynamical_system import NNDynamicalSystem
 from score_po.trajectory import BVPTrajectory
@@ -26,7 +26,7 @@ from examples.light_dark.environment import Environment
 @hydra.main(config_path="../config", config_name="trajopt_diffusion")
 def main(cfg: DictConfig):
     # 1. Set up parameters.
-    params = TrajectoryOptimizerDirColParams()
+    params = TrajectoryOptimizerDirTranParams()
 
     # 2. Load score function.
     network = MLPwEmbedding(4, 4, 4 * [512], 10)
@@ -65,7 +65,7 @@ def main(cfg: DictConfig):
 
     # 5. Define callback function
 
-    def callback(params: TrajectoryOptimizerDirColParams, loss: float, iter: int):
+    def callback(params: TrajectoryOptimizerDirTranParams, loss: float, iter: int):
         if iter % cfg.plot_period == 0:
             x_trj, u_trj = params.trj.get_full_trajectory()
             x_trj = x_trj.detach().cpu().numpy()
@@ -98,7 +98,7 @@ def main(cfg: DictConfig):
             plt.close()
 
     # 5. Run
-    optimizer = TrajectoryOptimizerNCDirCol(params)
+    optimizer = TrajectoryOptimizerNCDirTran(params)
     optimizer.iterate(callback)
 
 

@@ -23,6 +23,7 @@ from score_po.nn import (
     save_module,
     tensor_linspace,
     generate_cosine_schedule,
+    get_current_sigma,
 )
 
 
@@ -94,7 +95,6 @@ class TrajectoryOptimizer:
                 else:
                     xnext_trj_init = torch.cat(self.trj.T * [self.trj.x0[None, :]])
                 self.trj.xnext_trj = torch.nn.Parameter(xnext_trj_init)
-                xnext_trj_init += torch.randn_like(xnext_trj_init) * 0.1
             else:
                 self.trj.xnext_trj = torch.nn.Parameter(x_trj_guess[1:])
 
@@ -249,15 +249,11 @@ class TrajectoryOptimizerNCSF(TrajectoryOptimizerSF):
         self.sigma_lst = params.sf.sigma_lst
         assert isinstance(self.sf, NoiseConditionedScoreEstimatorXux)
 
-    def get_current_sigma(self):
-        idx = round(
-            len(self.sigma_lst) * ((self.iter) / (self.params.max_iters + 1)) - 0.5
-        )
-        return idx, self.sf.sigma_lst[idx]
-
     def modify_gradients(self):
         # Modify value loss by applying score function.
-        sigma_idx, sigma = self.get_current_sigma()
+        sigma_idx, sigma = get_current_sigma(
+            self.sf.sigma_lst, self.iter, self.params.max_iters
+        )
         # weight = -1 / sigma ** 2 * self.params.beta
         weight = -(sigma**2) * self.params.beta
         x_trj, u_trj = self.trj.get_full_trajectory()
@@ -411,12 +407,6 @@ class TrajectoryOptimizerNCSS(TrajectoryOptimizerSS):
         self.sigma_lst = params.sf.sigma_lst
         assert isinstance(self.sf, NoiseConditionedScoreEstimatorXu)
 
-    def get_current_sigma(self):
-        idx = round(
-            len(self.sigma_lst) * ((self.iter) / (self.params.max_iters + 1)) - 0.5
-        )
-        return idx, self.sf.sigma_lst[idx]
-
     def get_penalty_loss(self):
         """
         We compute a quantity such that when autodiffed w.r.t. θ, we
@@ -426,7 +416,9 @@ class TrajectoryOptimizerNCSS(TrajectoryOptimizerSS):
         (∇_z log p(z) * z) and and detach ∇_z log p(z) from the computation graph
         so that ∇_θ(∇_z log p(z) * z) = ∇_z log p(z) * ∇_θ z.
         """
-        idx, sigma = self.get_current_sigma()
+        idx, sigma = get_current_sigma(
+            self.sf.sigma_lst, self.iter, self.params.max_iters
+        )
         x_trj, u_trj = self.rollout_trajectory()
         z_trj = torch.cat((x_trj[:-1], u_trj), dim=1)
 
@@ -441,7 +433,7 @@ class TrajectoryOptimizerNCSS(TrajectoryOptimizerSS):
 
 
 @dataclass
-class TrajectoryOptimizerDirColParams(TrajectoryOptimizerParams):
+class TrajectoryOptimizerDirTranParams(TrajectoryOptimizerParams):
     alpha: float = 100.0
     beta: float = 1.0
     sf: ScoreEstimatorXu = None
@@ -462,8 +454,8 @@ class TrajectoryOptimizerDirColParams(TrajectoryOptimizerParams):
             self.ds.to(device)
 
 
-class TrajectoryOptimizerDirCol(TrajectoryOptimizer):
-    def __init__(self, params: TrajectoryOptimizerDirColParams, **kwargs):
+class TrajectoryOptimizerDirTran(TrajectoryOptimizer):
+    def __init__(self, params: TrajectoryOptimizerDirTranParams, **kwargs):
         super().__init__(params)
         self.sf = params.sf
         self.ds = params.ds
@@ -514,21 +506,17 @@ class TrajectoryOptimizerDirCol(TrajectoryOptimizer):
         return self.get_value_loss() + self.params.alpha * self.get_dynamics_loss()
 
 
-class TrajectoryOptimizerNCDirCol(TrajectoryOptimizerDirCol):
-    def __init__(self, params: TrajectoryOptimizerDirColParams, **kwargs):
+class TrajectoryOptimizerNCDirTran(TrajectoryOptimizerDirTran):
+    def __init__(self, params: TrajectoryOptimizerDirTranParams, **kwargs):
         super().__init__(params)
         self.sigma_lst = params.sf.sigma_lst
         assert isinstance(self.sf, NoiseConditionedScoreEstimatorXu)
 
-    def get_current_sigma(self):
-        idx = round(
-            len(self.sigma_lst) * ((self.iter) / (self.params.max_iters + 1)) - 0.5
-        )
-        return idx, self.sf.sigma_lst[idx]
-
     def modify_gradients(self):
         # Modify value loss by applying score function.
-        sigma_idx, sigma = self.get_current_sigma()
+        sigma_idx, sigma = get_current_sigma(
+            self.sf.sigma_lst, self.iter, self.params.max_iters
+        )
         # weight = -1 / sigma ** 2 * self.params.beta
         weight = -(sigma**2) * self.params.beta
         x_trj, u_trj = self.trj.get_full_trajectory()
