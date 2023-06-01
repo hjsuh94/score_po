@@ -99,7 +99,7 @@ class DataDistanceEstimatorXu(torch.nn.Module):
     def sample_from_domain(self, batch_size):
         scale = self.domain_ub - self.domain_lb
         return scale * torch.rand(
-            batch_size, self.dim_x + self.dim_u) + self.domain_lb
+            batch_size, self.dim_x + self.dim_u, device=scale.device) + self.domain_lb
     
     def get_xu_from_z(self, z):
         x = z[:, :self.dim_x]
