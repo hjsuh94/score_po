@@ -8,14 +8,18 @@ import torch
 import matplotlib.pyplot as plt
 import wandb
 
-from score_po.dynamical_system import DynamicalSystem, NNEnsembleDynamicalSystem
+from score_po.dynamical_system import (
+    DynamicalSystem,
+    NNEnsembleDynamicalSystem,
+    sim_openloop,
+)
 from score_po.score_matching import (
     ScoreEstimatorXux,
     ScoreEstimatorXu,
     NoiseConditionedScoreEstimatorXu,
     NoiseConditionedScoreEstimatorXux,
 )
-from score_po.data_distance import DataDistanceEstimatorXux
+from score_po.data_distance import DataDistanceEstimatorXux, DataDistanceEstimatorXu
 from score_po.costs import Cost
 from score_po.trajectory import Trajectory, IVPTrajectory, BVPTrajectory, SSTrajectory
 from score_po.nn import (
@@ -355,14 +359,7 @@ class TrajectoryOptimizerSS(TrajectoryOptimizer):
             x0_batch: initial condition of shape (B, dim_x)
             noise_trj_batch: (B, T, dim_u) noise output on the output of trajectory.
         """
-        x_trj = torch.zeros((self.trj.T + 1, self.ds.dim_x)).to(self.params.device)
-        x_trj[0] = self.trj.x0[None, :]
-        # x_trj = torch.hstack((x_trj, self.trj.x0[None, :]))
-
-        for t in range(self.params.T):
-            x_trj[t + 1] = self.ds.dynamics(x_trj[t], self.trj.u_trj[t])
-            # x_trj = torch.hstack((x_trj, x_next_batch[None, :]))
-
+        x_trj = sim_openloop(self.ds, self.trj.x0, self.trj.u_trj, noise_trj=None)
         return x_trj, self.trj.u_trj
 
     def get_value_loss(self):
@@ -608,42 +605,74 @@ class TrajectoryOptimizerSSEnsemble(TrajectoryOptimizer):
 
 
 @dataclass
-class CEMEnsembleParams(TrajectoryOptimizerParams):
-    beta: float = 1.0
-    ds: DynamicalSystem = None
+class CEMParams(TrajectoryOptimizerParams):
     n_elite: int = 3
     batch_size: int = 10
     std: float = 0.05
+    ds: DynamicalSystem = None
 
     def __init__(self):
         super().__init__()
 
     def load_from_config(self, cfg: DictConfig):
         super().load_from_config(cfg)
-        self.beta = cfg.trj.beta
+        if hasattr(cfg.trj, "n_elite"):
+            self.n_elite = cfg.trj.n_elite
+        if hasattr(cfg.trj, "batch_size"):
+            self.batch_size = cfg.trj.batch_size
         self.std = cfg.trj.std
 
     def to_device(self, device):
         super().to_device(device)
-        if isinstance(self.ds, torch.nn.Module):
-            self.ds.to(device)
 
 
-class CEMEnsemble(TrajectoryOptimizerSSEnsemble):
-    def __init__(self, params: CEMEnsembleParams, **kwargs):
+class CEM(TrajectoryOptimizer):
+    params: CEMParams
+    ds: DynamicalSystem
+
+    def __init__(self, params: CEMParams, **kwargs):
         super().__init__(params)
+        self.ds = params.ds
+
+    def initialize(self):
+        if self.trj is None:
+            u_trj_init = torch.zeros(self.trj.u_trj.shape).to(self.params.device)
+            u_trj_init += torch.randn_like(u_trj_init) * 0.0
+            self.trj.u_trj = torch.nn.Parameter(u_trj_init)
+
+    def rollout_trajectory(self):
+        """
+        Rollout policy in batch, given
+            x0_batch: initial condition of shape (B, dim_x)
+            noise_trj_batch: (B, T, dim_u) noise output on the output of trajectory.
+        """
+        x_trj = sim_openloop(self.ds, self.trj.x0, self.trj.u_trj, noise_trj=None)
+        return x_trj, self.trj.u_trj
+
+    def _get_value_loss(self, x_trj, u_trj):
+        cost = self.cost.get_running_cost_batch(x_trj[:-1], u_trj[:]).sum()
+        cost += self.cost.get_terminal_cost(x_trj[-1])
+        return cost
+
+    def get_value_loss(self):
+        # Loop over trajectories to compute reward loss.
+        x_trj, u_trj = self.rollout_trajectory()
+        return self._get_value_loss(x_trj, u_trj)
+
+    def compute_loss(self):
+        return self.get_value_loss()
 
     def update_trajectory(self):
-        u_trj_batch = torch.cat(self.params.batch_size * [self.trj.u_trj[None, :]])
+        u_trj_batch = self.trj.u_trj.unsqueeze(0).repeat(
+            [self.params.batch_size] + [1] * self.trj.u_trj.ndim
+        )
         u_trj_batch += torch.randn_like(u_trj_batch) * self.params.std
         cost_lst = torch.zeros(self.params.batch_size).to(self.params.device)
         for b in range(self.params.batch_size):
-            self.trj.u_trj = torch.nn.Parameter(u_trj_batch[b, :, :])
-            cost_lst[b] = (
-                self.get_value_loss() + self.params.beta * self.get_penalty_loss()
-            )
+            self.trj.u_trj = torch.nn.Parameter(u_trj_batch[b])
+            cost_lst[b] = self.compute_loss()
         _, ind = torch.topk(cost_lst, self.params.n_elite, largest=False)
-        next_trj = u_trj_batch[ind, :, :].mean(dim=0)
+        next_trj = u_trj_batch[ind].mean(dim=0)
         self.trj.u_trj = torch.nn.Parameter(next_trj)
 
     def compute_loss(self):
@@ -671,7 +700,7 @@ class CEMEnsemble(TrajectoryOptimizerSSEnsemble):
         self.initialize()
         self.trj.train()
 
-        loss = self.get_value_loss()
+        loss = self.compute_loss()
 
         start_time = time.time()
         print("Iteration: {:04d} | Cost: {:.3f} | Time: {:.3f}".format(0, loss, 0))
@@ -707,3 +736,66 @@ class CEMEnsemble(TrajectoryOptimizerSSEnsemble):
             self.iter += 1
 
         return self.cost_lst
+
+
+@dataclass
+class CEMEnsembleParams(CEMParams):
+    beta: float = 1.0
+    ds: DynamicalSystem = None
+
+    def __init__(self):
+        super().__init__()
+
+    def load_from_config(self, cfg: DictConfig):
+        super().load_from_config(cfg)
+        self.beta = cfg.trj.beta
+
+    def to_device(self, device):
+        super().to_device(device)
+        if isinstance(self.ds, torch.nn.Module):
+            self.ds.to(device)
+
+
+class CEMEnsemble(CEM, TrajectoryOptimizerSSEnsemble):
+    # Both CEM and TrajectoryOptimizerSSEnsemble define iterate() function, but we
+    # want to use CEM's iterate function, so we put CEM before
+    # TrajectoryOptimizerSSEnsemble
+    def __init__(self, params: CEMEnsembleParams, **kwargs):
+        super().__init__(params)
+
+    def compute_loss(self):
+        return self.get_value_loss() + self.params.beta * self.get_penalty_loss()
+
+
+@dataclass
+class CEMDataDistanceEstimatorParams(CEMParams):
+    beta: float = 1.0
+    dde: DataDistanceEstimatorXu = None
+
+    def __init__(self):
+        super().__init__()
+
+    def load_from_config(self, cfg: DictConfig):
+        super().load_from_config(cfg)
+        self.beta = cfg.trj.beta
+
+    def to_device(self, device):
+        super().to_device(device)
+        if isinstance(self.ds, torch.nn.Module):
+            self.dde.to(device)
+
+
+class CEMDataDistanceEstimator(CEM):
+    def __init__(self, params: CEMDataDistanceEstimatorParams, **kwargs):
+        super().__init__(params)
+        self.dde = params.dde
+
+    def _get_penalty_loss(self, x_trj, u_trj):
+        z_trj = torch.cat((x_trj[:-1], u_trj), dim=1)
+        return self.dde.get_energy_to_data(z_trj).sum()
+
+    def compute_loss(self):
+        x_trj, u_trj = self.rollout_trajectory()
+        return self._get_value_loss(
+            x_trj, u_trj
+        ) + self.params.beta * self._get_penalty_loss(x_trj, u_trj)
