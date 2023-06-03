@@ -282,11 +282,12 @@ class NNEnsembleDynamicalSystem(DynamicalSystem):
                 ds, new_params, dataset, loss, split=True)
             loss_lst_esb.append(loss_lst)
         return loss_lst_esb
-            
+
     def load_ensemble(self, filename):
         for k, ds in enumerate(self.ds_lst):
             pre, ext = os.path.splitext(filename)
             ds.load_state_dict(torch.load(pre + "_{:02d}".format(k) + ext))
+        # TODO(hongkai.dai): load the normalizer in the ensemble.
             
     def to(self, device):
         for ds in self.ds_lst:

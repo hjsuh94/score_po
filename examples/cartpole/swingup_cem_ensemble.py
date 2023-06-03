@@ -8,21 +8,22 @@ import numpy as np
 import torch
 
 from examples.cartpole.cartpole_plant import CartpoleNNDynamicalSystem, CartpolePlant
-from score_po.dynamical_system import DynamicalSystem, sim_openloop
+from score_po.dynamical_system import (
+    DynamicalSystem,
+    sim_openloop,
+    NNEnsembleDynamicalSystem,
+)
 from score_po.nn import AdamOptimizerParams, WandbParams, Normalizer
 from score_po.trajectory import SSTrajectory
-from score_po.trajectory_optimizer import (
-    CEMDataDistanceEstimator,
-    CEMDataDistanceEstimatorParams,
-)
+from score_po.trajectory_optimizer import CEMEnsemble, CEMEnsembleParams
 from score_po.data_distance import DataDistanceEstimatorXu
 from score_po.costs import QuadraticCost
-from score_po.policy import TimeVaryingOpenLoopPolicy, Clamper
-from examples.cartpole.data_distance_training import get_dde_network
-#from examples.cartpole.swingup import plot_result
+
+OmegaConf.register_new_resolver("np.pi", lambda x: np.pi * x)
+
 
 def plot_result(
-    traj_optimizer: CEMDataDistanceEstimator,
+    traj_optimizer: CEMEnsemble,
     plant: CartpolePlant,
     x_lo: torch.Tensor,
     x_up: torch.Tensor,
@@ -33,7 +34,7 @@ def plot_result(
     u_trj = traj_optimizer.trj.u_trj.data
     x0 = torch.zeros((4,), device=device)
     # Simulate with the optimizer dynamics.
-    x_trj_plan = sim_openloop(traj_optimizer.ds, x0, u_trj, None)
+    x_trj_plan = sim_openloop(traj_optimizer.ds.ds_lst[0], x0, u_trj, None)
     # Simulate with the true dynamics.
     x_trj_sim = sim_openloop(plant, x0, u_trj, None)
     x_trj_plan_np = x_trj_plan.cpu().detach().numpy()
@@ -58,6 +59,7 @@ def plot_result(
     beta_val = 0
     beta_val = traj_optimizer.params.beta
     ax1.set_title(r"$\beta$" + f"={beta_val}", fontsize=16)
+    ax1.tick_params(axis="both", labelsize=15)
 
     ax2 = fig.add_subplot(122)
     ax2.plot(x_trj_plan_np[:, 2], x_trj_plan_np[:, 3], label="plan", color="b")
@@ -73,13 +75,15 @@ def plot_result(
     ax2.set_xlabel(r"$\dot{x}$", fontsize=16)
     ax2.set_ylabel(r"$\dot{\theta}$", fontsize=16)
     ax2.set_title(r"$\beta$" + f"={beta_val}", fontsize=16)
+    ax2.tick_params(axis="both", labelsize=15)
 
     fig.tight_layout()
 
-    fig.savefig(
-        os.path.join(os.getcwd(), f"swingup_state_beta{beta_val}.png"),
-        format="png",
-    )
+    for fig_format in ("pdf", "png", "svg"):
+        fig.savefig(
+            os.path.join(os.getcwd(), f"swingup_state_beta{beta_val}.{fig_format}"),
+            format=fig_format,
+        )
 
     fig = plt.figure()
     ax = fig.add_subplot()
@@ -94,56 +98,66 @@ def plot_result(
         format="png",
     )
 
-def mppi(dynamical_system: CartpoleNNDynamicalSystem, x0: torch.Tensor, dde: DataDistanceEstimatorXu, cfg:DictConfig):
+
+def mppi(
+    dynamical_system: NNEnsembleDynamicalSystem, x0: torch.Tensor, cfg: DictConfig
+):
     device = x0.device
-    params = CEMDataDistanceEstimatorParams()
+    params = CEMEnsembleParams()
     params.load_from_config(cfg)
     params.save_best_model = os.path.join(os.getcwd(), params.save_best_model)
     params.cost = QuadraticCost(
-        Q = torch.zeros((4, 4)),
-        R = torch.tensor([[0.]]),
-        Qd = torch.diag(torch.tensor([1, 1, 0.1, 0.1])),
-        xd = torch.tensor([0, np.pi, 0, 0])
+        Q=torch.zeros((4, 4)),
+        R=torch.tensor([[0.0]]),
+        Qd=torch.diag(torch.tensor([1, 1, 0.1, 0.1])),
+        xd=torch.tensor([0, np.pi, 0, 0]),
     )
-    params.trj = SSTrajectory(dim_x=dynamical_system.dim_x, dim_u = dynamical_system.dim_u, T=params.T, x0=x0)
+    params.trj = SSTrajectory(
+        dim_x=dynamical_system.dim_x, dim_u=dynamical_system.dim_u, T=params.T, x0=x0
+    )
     params.ivp = True
-    params.dde = dde
     params.ds = dynamical_system
     if cfg.trj.load_ckpt is not None:
         params.trj.load_state_dict(torch.load(cfg.trj.load_ckpt))
 
     params.to_device(device)
-    traj_optimizer = CEMDataDistanceEstimator(params)
-    traj_optimizer.iterate()
+    traj_optimizer = CEMEnsemble(params)
+    if cfg.trj.train:
+        traj_optimizer.iterate()
     return traj_optimizer
 
 
-@hydra.main(config_path="./config", config_name="swingup_cem")
+@hydra.main(config_path="./config", config_name="swingup_cem_ensemble")
 def main(cfg: DictConfig):
     OmegaConf.save(cfg, os.path.join(os.getcwd(), "config.yaml"))
     device = cfg.device
-    nn_plant = CartpoleNNDynamicalSystem(
-        hidden_layers=cfg.plant_param.hidden_layers, device=device
+
+    ensemble_size = cfg.plant_param.num_models
+    ds_lst = [None] * ensemble_size
+    for i in range(ensemble_size):
+        ds_lst[i] = CartpoleNNDynamicalSystem(
+            hidden_layers=cfg.plant_param.hidden_layers[i], device=device
+        )
+
+    ds = NNEnsembleDynamicalSystem(
+        dim_x=4,
+        dim_u=1,
+        ds_lst=ds_lst,
+        x_normalizer=None,
+        u_normalizer=None,
     )
-    nn_plant.load_state_dict(torch.load(cfg.dynamics_load_ckpt))
-    nn_plant.to(device)
+    ds.load_ensemble(cfg.load_ensemble_model)
     plant = CartpolePlant(dt=cfg.plant_param.dt)
 
-    dde_network = get_dde_network()
+    x0 = torch.tensor([0, 0, 0.0, 0.0], device=device)
+
+    traj_optimizer = mppi(ds, x0, cfg=cfg)
 
     x_lo = torch.tensor(cfg.plant_param.x_lo)
     x_up = torch.tensor(cfg.plant_param.x_up)
-    xu_lb = torch.cat((x_lo, torch.tensor([-cfg.plant_param.u_max]))).to(device)
-    xu_ub = torch.cat((x_up, torch.tensor([cfg.plant_param.u_max]))).to(device)
-    dde = DataDistanceEstimatorXu(dim_x=4, dim_u=1, network=dde_network, domain_lb=xu_lb, domain_ub=xu_ub)
-    dde.load_state_dict(torch.load(cfg.dde_xu_load_ckpt))
-
-    x0 = torch.tensor([0, 0, 0., 0.], device=device)
-
-    traj_optimizer = mppi(nn_plant, x0, dde=dde, cfg=cfg)
-    torch.save(traj_optimizer.trj.state_dict(), os.path.join(os.getcwd(), "trj.pth"))
-
-    plot_result(traj_optimizer, plant, x_lo, x_up, cfg.plant_param.u_max, cfg.plant_param.dt)
+    u_max = cfg.plant_param.u_max
+    dt = cfg.plant_param.dt
+    plot_result(traj_optimizer, plant, x_lo, x_up, u_max, dt)
 
 
 if __name__ == "__main__":

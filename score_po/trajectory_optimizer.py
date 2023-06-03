@@ -141,14 +141,16 @@ class TrajectoryOptimizer:
             if callback is not None:
                 callback(self, loss.item(), iter)
             optimizer.zero_grad()
-            loss = self.get_value_loss() + self.params.beta * self.get_penalty_loss()
+            value_loss = self.get_value_loss()
+            loss = value_loss + self.params.beta * self.get_penalty_loss()
             loss.backward()
             self.modify_gradients()
             optimizer.step()
             self.cost_lst[iter + 1] = loss.item()
+            
 
             if self.params.wandb_params.enabled:
-                wandb.log({"trj_loss": loss.item()})
+                wandb.log({"trj_loss": loss.item(), "value": value_loss.item()})
             save_model = False
             if loss.item() < best_cost:
                 best_cost = loss.item()
@@ -338,9 +340,12 @@ class TrajectoryOptimizerSS(TrajectoryOptimizer):
         assert isinstance(self.trj, SSTrajectory)
         assert isinstance(self.sf, ScoreEstimatorXu)
 
-    def initialize(self):
-        u_trj_init = torch.zeros(self.trj.u_trj.shape).to(self.params.device)
-        u_trj_init += torch.randn_like(u_trj_init) * 0.0
+    def initialize(self, x_trj_guess, u_trj_guess):
+        if u_trj_guess is None:
+            u_trj_init = torch.zeros(self.trj.u_trj.shape).to(self.params.device)
+            u_trj_init += torch.randn_like(u_trj_init) * 0.0
+        else:
+            u_trj_init = u_trj_guess
         self.trj.u_trj = torch.nn.Parameter(u_trj_init)
 
     def rollout_trajectory(self):
@@ -445,8 +450,11 @@ class TrajectoryOptimizerSSEnsemble(TrajectoryOptimizer):
         assert isinstance(self.trj, SSTrajectory)
         assert isinstance(self.ds, NNEnsembleDynamicalSystem)
 
-    def initialize(self):
-        u_trj_init = torch.zeros(self.trj.u_trj.shape).to(self.params.device)
+    def initialize(self, x_trj_guess=None, u_trj_guess=None):
+        if u_trj_guess is None:
+            u_trj_init = torch.zeros(self.trj.u_trj.shape).to(self.params.device)
+        else:
+            u_trj_init = u_trj_guess.to(self.device)
         self.trj.u_trj = torch.nn.Parameter(u_trj_init)
 
     def rollout_trajectory(self):
@@ -596,11 +604,12 @@ class CEM(TrajectoryOptimizer):
                 callback(self, loss.item(), iter)
 
             self.update_trajectory()
+            value = self.get_value_loss()
             loss = self.compute_loss()
             self.cost_lst[iter + 1] = loss.item()
 
             if self.params.wandb_params.enabled:
-                wandb.log({"trj_loss": loss.item()})
+                wandb.log({"trj_loss": loss.item(), "value": value.item()})
             if (
                 self.params.saving_period is not None
                 and iter % self.params.saving_period == 0
@@ -647,8 +656,59 @@ class CEMEnsemble(CEM, TrajectoryOptimizerSSEnsemble):
     def __init__(self, params: CEMEnsembleParams, **kwargs):
         super().__init__(params)
 
+    def rollout_trajectory(self):
+        """
+        Rollout trajectory with ensembles.
+        """
+        x_trj = torch.zeros((self.K, self.trj.T + 1, self.ds.dim_x)).to(
+            self.params.device
+        )
+        u_trj = torch.cat(self.K * [self.trj.u_trj[None, :, :]])
+        x_trj[:, 0, :] = self.trj.x0
+
+        for t in range(self.trj.T):
+            x_trj[:, t + 1, :] = self.ds.dynamics_batch(
+                x_trj[:, t, :][:, None, :], u_trj[:, t, :][:, None, :]
+            )[:, 0, :]
+
+        return x_trj, u_trj
+
+    def get_value_loss(self):
+        # Loop over trajectories to compute reward loss.
+        x_trj, u_trj = self.rollout_trajectory()
+        cost = torch.zeros(self.K).to(self.params.device)
+        for k in range(self.K):
+            cost[k] += self.cost.get_running_cost_batch(
+                x_trj[k, :-1, :], u_trj[k, :, :]
+            ).sum()
+            cost[k] += self.cost.get_terminal_cost(x_trj[k, -1, :])
+        return cost.mean()
+
+    def get_penalty_loss(self):
+        x_trj, u_trj = self.rollout_trajectory()
+        cost = torch.zeros(self.K).to(self.params.device)
+        for k in range(self.K):
+            cost[k] += self.cost.get_running_cost_batch(
+                x_trj[k, :-1, :], u_trj[k, :, :]
+            ).sum()
+            cost[k] += self.cost.get_terminal_cost(x_trj[k, -1, :])
+        return cost.var()
+
     def compute_loss(self):
         return self.get_value_loss() + self.params.beta * self.get_penalty_loss()
+
+    def update_trajectory(self):
+        u_trj_batch = self.trj.u_trj.unsqueeze(0).repeat(
+            [self.params.batch_size] + [1] * self.trj.u_trj.ndim
+        )
+        u_trj_batch += torch.randn_like(u_trj_batch) * self.params.std
+        cost_lst = torch.zeros(self.params.batch_size).to(self.params.device)
+        for b in range(self.params.batch_size):
+            self.trj.u_trj = torch.nn.Parameter(u_trj_batch[b])
+            cost_lst[b] = self.compute_loss()
+        _, ind = torch.topk(cost_lst, self.params.n_elite, largest=False)
+        next_trj = u_trj_batch[ind].mean(dim=0)
+        self.trj.u_trj = torch.nn.Parameter(next_trj)
 
 
 @dataclass

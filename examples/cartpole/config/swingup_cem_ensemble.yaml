@@ -1,6 +1,6 @@
 defaults:
   - user: hongkai
-  - plant_param: param1
+  - plant_param: ensemble_param
 
 hydra:
   run:
@@ -11,26 +11,24 @@ hydra:
 device: "cuda"
 seed: 123
 
-single_shooting: True
-
 trj:
   wandb:
     enabled: ${user.wandb_enabled}
     project: score_po
     dir: ${user.run_dir}
-    name: ${now:%Y.%m.%d-%H.%M.%S}_cartpole_swingup
+    name: ${now:%Y.%m.%d-%H.%M.%S}_cartpole_swingup_ensemble
     entity: ${user.wandb_entity}
   T: 60
-  std: 0.
+  std: 0.05
   lr: 1e-2
   max_iters: 20000
   save_best_model: ${user.save_swingup_trj}
   device: "cuda"
   load_ckpt: ${user.load_swingup_trj}
   saving_period: null
-  beta: 0.1
+  n_elite: 4
+  batch_size: 10
+  beta: 0.
   train: True
 
-dynamics_load_ckpt: ${user.dynamics_load_ckpt}
-score_estimator_xu_load_ckpt: ${user.score_estimator_xu_load_ckpt}
-score_estimator_xux_load_ckpt: ${user.score_estimator_xux_load_ckpt}
+load_ensemble_model: ${user.load_ensemble_model}
