@@ -18,6 +18,7 @@ from score_po.trajectory import SSTrajectory
 from score_po.trajectory_optimizer import CEMEnsemble, CEMEnsembleParams
 from score_po.data_distance import DataDistanceEstimatorXu
 from score_po.costs import QuadraticCost
+from examples.cartpole.generate_video_util import generate_video_snapshots
 
 OmegaConf.register_new_resolver("np.pi", lambda x: np.pi * x)
 
@@ -97,6 +98,8 @@ def plot_result(
         os.path.join(os.getcwd(), f"swingup_u_beta{beta_val}.png"),
         format="png",
     )
+    generate_video_snapshots(plant, x_trj_sim_np, dt, N_interpolate=5, videofolder="sim_video", video_name="ensemble_sim", title_prefix="Sim ")
+    generate_video_snapshots(plant, x_trj_plan_np, dt, N_interpolate=5, videofolder="plan_video", video_name="ensemble_plan", title_prefix="Plan ")
 
 
 def mppi(

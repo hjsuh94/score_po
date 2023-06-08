@@ -96,7 +96,7 @@ class CartpolePlant(DynamicalSystem):
 
         # Draw the pole
         pole_width = 0.01
-        theta_shift = theta 
+        theta_shift = theta
         pole = (
             base_center
             + (
@@ -161,4 +161,3 @@ class CartpoleNNDynamicalSystem(NNDynamicalSystem):
             x_normalizer=x_normalizer,
             u_normalizer=u_normalizer,
         )
-

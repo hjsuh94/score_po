@@ -25,7 +25,7 @@ trj:
   save_best_model: ${user.save_swingup_trj}
   device: "cuda"
   load_ckpt: ${user.load_swingup_trj}
-  saving_period: null
+  saving_period: 100
   n_elite: 4
   batch_size: 10
   beta: 0.

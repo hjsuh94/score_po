@@ -31,6 +31,7 @@ trj:
   n_elite: 4
   batch_size: 10
   beta: 0.1
+  train: True
 
 dynamics_load_ckpt: ${user.dynamics_load_ckpt}
 dde_xu_load_ckpt: ${user.dde_xu_load_ckpt}

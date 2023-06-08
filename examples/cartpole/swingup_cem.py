@@ -20,6 +20,7 @@ from score_po.costs import QuadraticCost
 from score_po.policy import TimeVaryingOpenLoopPolicy, Clamper
 from examples.cartpole.data_distance_training import get_dde_network
 #from examples.cartpole.swingup import plot_result
+from examples.cartpole.generate_video_util import generate_video_snapshots
 
 def plot_result(
     traj_optimizer: CEMDataDistanceEstimator,
@@ -58,6 +59,7 @@ def plot_result(
     beta_val = 0
     beta_val = traj_optimizer.params.beta
     ax1.set_title(r"$\beta$" + f"={beta_val}", fontsize=16)
+    ax1.tick_params(axis="both", labelsize=15)
 
     ax2 = fig.add_subplot(122)
     ax2.plot(x_trj_plan_np[:, 2], x_trj_plan_np[:, 3], label="plan", color="b")
@@ -73,13 +75,15 @@ def plot_result(
     ax2.set_xlabel(r"$\dot{x}$", fontsize=16)
     ax2.set_ylabel(r"$\dot{\theta}$", fontsize=16)
     ax2.set_title(r"$\beta$" + f"={beta_val}", fontsize=16)
+    ax2.tick_params(axis="both", labelsize=15)
 
     fig.tight_layout()
 
-    fig.savefig(
-        os.path.join(os.getcwd(), f"swingup_state_beta{beta_val}.png"),
-        format="png",
-    )
+    for fig_format in ("pdf", "png", "svg"):
+        fig.savefig(
+            os.path.join(os.getcwd(), f"swingup_state_beta{beta_val}.{fig_format}"),
+            format=fig_format,
+        )
 
     fig = plt.figure()
     ax = fig.add_subplot()
@@ -93,6 +97,8 @@ def plot_result(
         os.path.join(os.getcwd(), f"swingup_u_beta{beta_val}.png"),
         format="png",
     )
+    generate_video_snapshots(plant, x_trj_sim_np, dt, N_interpolate=5, videofolder="sim_video", video_name="ensemble_sim", title_prefix="Sim ")
+    generate_video_snapshots(plant, x_trj_plan_np, dt, N_interpolate=5, videofolder="plan_video", video_name="ensemble_plan", title_prefix="Plan ")
 
 def mppi(dynamical_system: CartpoleNNDynamicalSystem, x0: torch.Tensor, dde: DataDistanceEstimatorXu, cfg:DictConfig):
     device = x0.device
@@ -114,7 +120,8 @@ def mppi(dynamical_system: CartpoleNNDynamicalSystem, x0: torch.Tensor, dde: Dat
 
     params.to_device(device)
     traj_optimizer = CEMDataDistanceEstimator(params)
-    traj_optimizer.iterate()
+    if cfg.trj.train:
+        traj_optimizer.iterate()
     return traj_optimizer
 
 
