@@ -33,7 +33,7 @@ from score_po.costs import QuadraticCost
 from score_po.policy import TimeVaryingOpenLoopPolicy, Clamper
 from examples.cartpole.score_training import get_score_network
 from examples.cartpole.swingup import plot_result
-
+from examples.cartpole.generate_video_util import generate_video_snapshots
 
 def plot_result(
     traj_optimizer: TrajectoryOptimizerSSEnsemble,
@@ -158,6 +158,9 @@ def plot_result(
             format=fig_format,
             bbox_inches="tight",
         )
+
+    generate_video_snapshots(plant, x_trj_sim_np, dt, N_interpolate=5, videofolder="sim_video", video_name="ensemble_sim", title_prefix="Sim ")
+    generate_video_snapshots(plant, x_trj_plan_np[0], dt, N_interpolate=5, videofolder="plan_video", video_name="ensemble_plan", title_prefix="Plan ")
 
 
 def single_shooting(ds: NNEnsembleDynamicalSystem, x0: torch.Tensor, cfg: DictConfig):

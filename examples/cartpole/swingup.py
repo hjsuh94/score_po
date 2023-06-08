@@ -32,6 +32,7 @@ from score_po.score_matching import (
 from score_po.costs import QuadraticCost
 from score_po.policy import TimeVaryingOpenLoopPolicy, Clamper
 from examples.cartpole.score_training import get_score_network
+from examples.cartpole.generate_video_util import generate_video_snapshots
 
 
 def plot_result(
@@ -128,8 +129,13 @@ def plot_result(
     for i in range(num_snapshots):
         x_snapshot = x_trj_sim_np[snapshot_indices[i]]
         plant.visualize(ax, x_snapshot, color=colors[i])
-        text_y_pos = -0.1 if i != num_snapshots-1 else 0.64
-        ax.text(x_snapshot[0]-0.15, text_y_pos, f"t={snapshot_indices[i] * plant.dt:.1f}s", fontsize=6)
+        text_y_pos = -0.1 if i != num_snapshots - 1 else 0.64
+        ax.text(
+            x_snapshot[0] - 0.15,
+            text_y_pos,
+            f"t={snapshot_indices[i] * plant.dt:.1f}s",
+            fontsize=6,
+        )
 
     for fig_format in ("pdf", "png", "svg"):
         fig.savefig(
@@ -137,6 +143,10 @@ def plot_result(
             format=fig_format,
             bbox_inches="tight",
         )
+
+    # Add the video.
+    generate_video_snapshots(plant, x_trj_sim_np, dt, N_interpolate=5, videofolder="sim_video", video_name="ensemble_sim", title_prefix="Sim ")
+    generate_video_snapshots(plant, x_trj_plan_np, dt, N_interpolate=5, videofolder="plan_video", video_name="ensemble_plan", title_prefix="Plan ")
 
 
 def single_shooting(
@@ -254,7 +264,15 @@ def main(cfg: DictConfig):
     x_up = torch.tensor(cfg.plant_param.x_up)
     u_max = cfg.plant_param.u_max
     dt = cfg.plant_param.dt
-    plot_result(traj_optimizer, plant, x_lo, x_up, u_max, dt, snapshot_indices=[0, 6, 10, 16,  30, 60])
+    plot_result(
+        traj_optimizer,
+        plant,
+        x_lo,
+        x_up,
+        u_max,
+        dt,
+        snapshot_indices=[0, 6, 10, 16, 30, 60],
+    )
 
 
 if __name__ == "__main__":
