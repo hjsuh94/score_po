@@ -7,15 +7,16 @@ hydra:
   sweep:
     dir: /home/terry/Documents/score_po_data/keypoints_sweep
 
+dataset_dir: ${user.dataset_dir}
 score_weights: ${user.run_dir}/examples/box_keypoints/weights/checkpoint_score_xu.pth
 dynamics_weights: ${user.run_dir}/examples/box_keypoints/weights/checkpoint_dynamics.pth
 
 warm_start: False
-beta: 1e-3
-beta_min: 1e-3
-T: 3
-lr: 1e-2
-max_iters: 50
+beta: 0.0
+beta_min: 0.0
+T: 8
+lr: 1e-1
+max_iters: 100
 trial: 0
 
 trj:

@@ -6,7 +6,7 @@ hydra:
     dir: ${user.run_dir}
 
 dataset_dir: ${user.dataset_dir}
-score_weights: "/home/terry/Documents/score_po_data/box_keypoints/checkpoint_score_xu.pth"
+score_weights: "/home/terry/Documents/score_po/examples/box_keypoints/weights/checkpoint_score_xu.pth"
 max_iters: 1000
 step_size: 1e-4
 
