@@ -142,7 +142,7 @@ class TrajectoryOptimizer:
 
         for iter in range(self.params.max_iters - 1):
             if callback is not None:
-                callback(self, loss.item(), iter)
+                callback(self, loss, iter)
             optimizer.zero_grad()
             loss = self.compute_loss()
             loss.backward()

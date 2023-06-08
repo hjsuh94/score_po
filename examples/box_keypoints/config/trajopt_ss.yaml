@@ -1,0 +1,41 @@
+defaults:
+  - user: terry
+
+hydra:
+  run:
+    dir: ${user.run_dir}
+  sweep:
+    dir: /home/terry/Documents/score_po_data/keypoints_sweep
+
+dataset_dir: ${user.dataset_dir}
+score_weights: ${user.run_dir}/examples/box_keypoints/weights/checkpoint_score_xu.pth
+dynamics_weights: ${user.run_dir}/examples/box_keypoints/weights/checkpoint_dynamics.pth
+
+warm_start: False
+beta: 0.0
+beta_min: 0.0
+T: 8
+lr: 1e-1
+max_iters: 100
+trial: 0
+
+trj:
+  T: ${T}
+  # when T is too high, autoregressive error kills you.
+  x0: [0.8, 0.2]
+  xT: [-0.8, 0.2]
+  batch_size: 1 # 1 for trajopt.
+  lr: ${lr} # 5e-2
+  max_iters: ${max_iters}
+  save_best_model: null
+  saving_period: null
+  load_ckpt: null
+  device: "cuda"
+  beta: ${beta}
+
+  wandb:
+    enabled: ${user.wandb_enabled}
+    project: score_po
+    dir: ${user.run_dir}
+    name: ${now:%Y.%m.%d-%H.%M.%S}
+    entity: ${user.wandb_entity}

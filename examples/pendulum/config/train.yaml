@@ -28,8 +28,8 @@ train:
   device: "cuda"
   seed: 123
 
-langevin_epsilon: 0.1
-langevin_steps: 500 
+langevin_epsilon: 0.001
+langevin_steps: 1000 
 
-train_score: False
+train_score: True
 load_score: "/home/lu/score_po/examples/pendulum/weights/ncsn_xux.pth"

@@ -1,6 +1,6 @@
-run_dir: /home/terry/Documents/score_po_data/box_keypoints/${now:%Y-%m-%d}/${now:%H-%M-%S}
+run_dir: /home/terry/Documents/score_po
 
 wandb_enabled: True
 wandb_entity: hjsuh94
 
-dataset_dir: /home/terry/Documents/score_po_data/box_keypoints/data_world.pkl
+dataset_dir: /home/terry/Documents/score_po/examples/box_keypoints/tensor_dataset.pkl

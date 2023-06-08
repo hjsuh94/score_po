@@ -5,25 +5,21 @@ hydra:
   run:
     dir: ${user.run_dir}
 
-box_width: 0.0867
-box_height: 0.1703
-dataset_size: 100000
-nn_layers: [128, 128, 128, 128]
-
 dataset_dir: ${user.dataset_dir}
+dynamic_weights: "/home/terry/Documents/score_po_data/box_keypoints/checkpoint_dynamics.pth"
 
 train:
   wandb:
     enabled: ${user.wandb_enabled}
-    project: score_po
+    project: score_po_keypts
     dir: ${user.run_dir}
-    name: ${now:%Y.%m.%d-%H.%M.%S}_keypoint_score
+    name: ${now:%Y.%m.%d-%H.%M.%S}_keypoint_dynamics
     entity: ${user.wandb_entity}  
   adam:
     lr: 1e-3
-    epochs: 6000
-    batch_size: 2048
+    epochs: 1000
+    batch_size: 1024
   dataset_split: [0.99, 0.01]
-  save_best_model: checkpoint_dynamics_hole_augment.pth
+  save_best_model: checkpoint_dynamics.pth
   load_ckpt: null
   device: "cuda"  
