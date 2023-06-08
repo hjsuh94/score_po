@@ -163,7 +163,7 @@ def main(cfg: DictConfig):
     R = 0.001 * torch.eye(dim_x).to(device)
 
     # This dt here should be the same as nn_plant.dt in learn_model.yaml
-    # TODO(hongkai.dai): figure out how to load this dt from the yaml file.
+    # TODO: figure out how to load this dt from the yaml file.
     single_integrator = SingleIntegrator(dt=0.1, dim_x=2)
 
     # First optimize path without the score function regulization.

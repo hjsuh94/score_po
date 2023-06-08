@@ -1,4 +1,4 @@
 run_dir: ~/score_po_data/box_keypoints/${now:%Y-%m-%d}/${now:%H-%M-%S}
 
 wandb_enabled: True
-wandb_entity: null 
+wandb_entity: null

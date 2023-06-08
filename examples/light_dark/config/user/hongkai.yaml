@@ -1,4 +1,0 @@
-run_dir: /home/hongkaidai/score_po_data/light_dark/${now:%Y-%m-%d}/${now:%H-%M-%S}
-
-wandb_enabled: True
-wandb_entity: daihongkai

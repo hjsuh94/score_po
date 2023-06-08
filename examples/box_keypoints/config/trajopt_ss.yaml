@@ -1,11 +1,11 @@
 defaults:
-  - user: terry
+  - user: user1
 
 hydra:
   run:
     dir: ${user.run_dir}
   sweep:
-    dir: /home/terry/Documents/score_po_data/keypoints_sweep
+    dir: ~/Documents/score_po_data/keypoints_sweep
 
 dataset_dir: ${user.dataset_dir}
 score_weights: ${user.run_dir}/examples/box_keypoints/weights/checkpoint_score_xu.pth

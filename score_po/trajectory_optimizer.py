@@ -223,7 +223,7 @@ class TrajectoryOptimizerSF(TrajectoryOptimizer):
 
     def modify_gradients(self):
         # Modify value loss by applying score function.
-        # TODO(terry-suh): Changing this to batch implementation will
+        # TODO: Changing this to batch implementation will
         # result in a much better speedup.
         x_trj, u_trj = self.trj.get_full_trajectory()
 
@@ -489,7 +489,7 @@ class TrajectoryOptimizerDirTran(TrajectoryOptimizer):
 
     def modify_gradients(self):
         # Modify value loss by applying score function.
-        # TODO(terry-suh): Changing this to batch implementation will
+        # TODO: Changing this to batch implementation will
         # result in a much better speedup.
         x_trj, u_trj = self.trj.get_full_trajectory()
 

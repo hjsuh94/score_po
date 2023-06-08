@@ -1,0 +1,4 @@
+run_dir: ~/Documents/score_po_data/light_dark/sf_diffusion
+
+wandb_enabled: True
+wandb_entity: null

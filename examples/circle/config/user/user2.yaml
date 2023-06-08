@@ -1,0 +1,8 @@
+run_dir: ~/score_po_data/circle/${now:%Y-%m-%d}/${now:%H-%M-%S}
+
+wandb_enabled: True
+wandb_entity: null
+
+save_score_ckpt: checkpoint.pth
+load_samples: ~/score_po_data/circle/2023-05-02/10-35-14/samples.pth
+load_score: ~/score_po_data/circle/2023-05-02/10-35-14/score/checkpoint.pth

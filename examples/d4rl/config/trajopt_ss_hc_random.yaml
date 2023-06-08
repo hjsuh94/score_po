@@ -1,11 +1,11 @@
 defaults:
-  - user: terry
+  - user: user1
 
 hydra:
   run:
     dir: ${user.run_dir}
   sweep:
-    dir: /home/terry/Documents/score_po_data/d4rl_sweep8
+    dir: ~/Documents/score_po_data/d4rl_sweep8
 
 nn_layers: [256, 256, 256, 256]
 nn_layers_policy: [128, 128]

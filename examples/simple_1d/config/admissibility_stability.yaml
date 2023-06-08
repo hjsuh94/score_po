@@ -1,5 +1,5 @@
 defaults: 
-  - user: terry
+  - user: user1
 
 hydra:
   run:

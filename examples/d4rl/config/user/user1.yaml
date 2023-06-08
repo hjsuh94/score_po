@@ -1,7 +1,7 @@
 wandb_enabled: True
-wandb_entity: hjsuh94
+wandb_entity: null
 env_name: halfcheetah-medium-expert-v2
 
 # env_name: halfcheetah-medium-expert-v2
 
-run_dir: /home/terry/Documents/score_po_data/d4rl/${env_name}
+run_dir: ~/Documents/score_po_data/d4rl/${env_name}

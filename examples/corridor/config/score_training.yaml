@@ -1,5 +1,5 @@
 defaults:
-  - user: hongkai
+  - user: user2
   - corridor_parameter: corridor1
 
 hydra:
