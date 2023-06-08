@@ -11,7 +11,7 @@ hydra:
 device: "cuda"
 seed: 123
 
-single_shooting: True
+single_shooting: False
 
 trj:
   wandb:

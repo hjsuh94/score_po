@@ -18,7 +18,7 @@ def main(cfg: DictConfig):
     env = gym.make(cfg.env_name)
     dim_x = env.observation_space.shape[0]
     dim_u = env.action_space.shape[0]
-    dataset = d4rl.qlearning_dataset(env)
+    dataset = env.get_dataset()
 
     x = torch.Tensor(dataset["observations"])
     xnext = torch.Tensor(dataset["next_observations"])
@@ -37,7 +37,7 @@ def main(cfg: DictConfig):
     u_normalizer = Normalizer(k=k_u, b=b_u)
 
     dataset = TensorDataset(x, u, xnext)
-    network = MLP(dim_x + dim_u, dim_x, cfg.nn_layers)
+    network = MLP(dim_x + dim_u, dim_x, 4 * [1024], layer_norm=True)
     params = TrainParams()
     params.load_from_config(cfg)
 
@@ -48,7 +48,7 @@ def main(cfg: DictConfig):
         x_normalizer=x_normalizer,
         u_normalizer=u_normalizer,
     )
-    nn_dynamics.train_network(dataset, params)
+    nn_dynamics.train_network(dataset, params, sigma=0)
 
 
 if __name__ == "__main__":

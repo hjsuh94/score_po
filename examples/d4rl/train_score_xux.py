@@ -18,7 +18,7 @@ def main(cfg: DictConfig):
     env = gym.make(cfg.env_name)
     dim_x = env.observation_space.shape[0]
     dim_u = env.action_space.shape[0]
-    dataset = d4rl.qlearning_dataset(env)
+    dataset = env.get_dataset()
 
     x = torch.Tensor(dataset["observations"])
     u = torch.Tensor(dataset["actions"])
@@ -40,7 +40,7 @@ def main(cfg: DictConfig):
     # the state.
     dataset = TensorDataset(x, u, xnext)
     network = MLPwEmbedding(
-        dim_x + dim_u + dim_x, dim_x + dim_u + dim_x, 4 * [2048], 10
+        dim_x + dim_u + dim_x, dim_x + dim_u + dim_x, 4 * [1024], 10
     )
     params = TrainParams()
     params.load_from_config(cfg)
@@ -51,12 +51,14 @@ def main(cfg: DictConfig):
         network=network,
         x_normalizer=x_normalizer,
         u_normalizer=u_normalizer,
+        alpha=10,
     )
 
     sf.train_network(
         dataset,
         params,
-        sigma_lst=generate_cosine_schedule(0.3, 0.05, 10),
+        # sigma_lst=generate_cosine_schedule(0.4, 0.001, 10),
+        sigma_lst=torch.logspace(1.0, -1, 10),
         split=False,
         sample_sigma=True,
     )

@@ -5,7 +5,9 @@ import mujoco_py
 import cv2
 import gym, d4rl
 import os
+import logging
 from gym.wrappers.monitoring.video_recorder import VideoRecorder
+from torch.utils.data import TensorDataset
 
 from score_po.trajectory import Trajectory, IVPTrajectory, BVPTrajectory, SSTrajectory
 from score_po.policy import Policy, NNPolicy
@@ -35,7 +37,7 @@ class TrajectoryVisualizer:
         img = self.env.sim.render(width=900, height=900)
         img = cv2.flip(img, 0)
         img = cv2.cvtColor(img, 4)
-        img = img[300:600, 300:600]
+        # img = img[300:600, 300:600]
         cv2.imwrite(filename, img)
 
     def render_trajectory(self, x_trj, u_trj, foldername):
@@ -68,7 +70,9 @@ class GymPolicyEvaluator:
     """Given environment and policy, evaluate the performance."""
 
     def __init__(self, env_name: str, mpc: MPC):
-        self.env = gym.make(env_name)
+        self.env = gym.make(
+            env_name, terminate_when_unhealthy=False, healty_angle_range=(-5.0, 5.0)
+        )
         self.dim_x = self.env.observation_space.shape[0]
         self.dim_u = self.env.action_space.shape[0]
         self.mpc = mpc
@@ -85,7 +89,7 @@ class GymPolicyEvaluator:
         img = self.env.sim.render(width=900, height=900)
         img = cv2.flip(img, 0)
         img = cv2.cvtColor(img, 4)
-        img = img[300:600, 300:600]
+        # img = img[300:600, 300:600]
         cv2.imwrite(filename, img)
 
     def get_policy_score(self):
@@ -103,8 +107,14 @@ class GymPolicyEvaluator:
                 torch.Tensor(obs).to(self.mpc.opt.params.device)
             )
 
-            x_trj_last = self.mpc.x_trj_last.cpu().detach().numpy()
-            u_trj_last = self.mpc.u_trj_last.cpu().detach().numpy()
+            if isinstance(self.mpc.opt.trj, IVPTrajectory):
+                x_trj_last = self.mpc.x_trj_last.cpu().detach().numpy()
+                u_trj_last = self.mpc.u_trj_last.cpu().detach().numpy()
+            else:
+                x_trj_last, u_trj_last = self.mpc.opt.rollout_trajectory()
+                x_trj_last = x_trj_last.cpu().detach().numpy()
+                u_trj_last = u_trj_last.cpu().detach().numpy()
+
             self.traj_vis.render_trajectory(
                 x_trj_last, u_trj_last, "{:04d}".format(time)
             )
@@ -112,7 +122,15 @@ class GymPolicyEvaluator:
 
             time += 1
             returns += reward
-            print(returns)
+
+            time_str = "Time: {:04d}  |  ".format(time)
+            return_str = "Return: {:0.2f}  |  ".format(returns)
+            exp_return_str = "Exp. Return: {:0.2f}".format(returns / time * 1000)
+            logging.info(time_str + return_str + exp_return_str)
+
+            # if time > 250:
+            #    break
+
             # print(self.env.get_normalized_score(returns))
         return self.env.get_normalized_score(returns)
 
@@ -121,3 +139,32 @@ class GymPolicyEvaluator:
         for b in tqdm(range(self.batch_size)):
             policy_scores[b] = self.get_policy_score()
         return np.mean(policy_scores)
+
+
+def pack_dataset(x, xnext, u, timeouts, H):
+    dataset_length = len(x)
+    trj_indices = np.argwhere(timeouts == 1)[:, 0]
+
+    x_data = []
+    u_data = []
+
+    counter = 0
+    for i in range(len(trj_indices)):
+        if i == 0:
+            episode_length = trj_indices[0]
+        else:
+            episode_length = trj_indices[i] - trj_indices[i - 1]
+        episode_x = x[counter : counter + episode_length]
+        episode_u = u[counter : counter + episode_length]
+        counter += episode_length
+
+        for j in range(episode_length - H):
+            x_data.append(episode_x[j : j + H + 1])
+            u_data.append(episode_u[j : j + H])
+
+    dataset = TensorDataset(
+        torch.Tensor(np.array(x_data)),
+        torch.Tensor(np.array(u_data)),
+    )
+
+    return dataset

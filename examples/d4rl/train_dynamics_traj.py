@@ -11,19 +11,28 @@ import gym, d4rl
 
 from score_po.dynamical_system import NNDynamicalSystem
 from score_po.nn import MLP, train_network, TrainParams, Normalizer
-from score_po.costs import NNCost
+
+from gym_policy import pack_dataset
 
 
-@hydra.main(config_path="./config", config_name="cost_training")
+@hydra.main(config_path="./config", config_name="dynamics_training")
 def main(cfg: DictConfig):
     env = gym.make(cfg.env_name)
     dim_x = env.observation_space.shape[0]
     dim_u = env.action_space.shape[0]
     dataset = env.get_dataset()
 
-    x = torch.Tensor(dataset["observations"])
-    u = torch.Tensor(dataset["actions"])
-    r = torch.Tensor(dataset["rewards"])
+    x = dataset["observations"]
+    xnext = dataset["next_observations"]
+    u = dataset["actions"]
+    timeouts = dataset["timeouts"]
+
+    H = cfg.H
+
+    dataset = pack_dataset(x, xnext, u, timeouts, H)
+
+    x = torch.Tensor(x)
+    u = torch.Tensor(u)
 
     x_max, _ = torch.max(x, axis=0)
     x_min, _ = torch.min(x, axis=0)
@@ -37,19 +46,18 @@ def main(cfg: DictConfig):
     b_u = (u_max + u_min) / 2
     u_normalizer = Normalizer(k=k_u, b=b_u)
 
-    dataset = TensorDataset(x, u, -r)
-    network = MLP(dim_x + dim_u, 1, cfg.nn_layers, layer_norm=True)
+    network = MLP(dim_x + dim_u, dim_x, 4 * [1024], layer_norm=True)
     params = TrainParams()
     params.load_from_config(cfg)
 
-    nn_cost = NNCost(
+    nn_dynamics = NNDynamicalSystem(
         dim_x=dim_x,
         dim_u=dim_u,
         network=network,
         x_normalizer=x_normalizer,
         u_normalizer=u_normalizer,
     )
-    nn_cost.train_network(dataset, params)
+    nn_dynamics.train_network_simulation(dataset, params, H=H, gamma=0.9)
 
 
 if __name__ == "__main__":

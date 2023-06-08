@@ -85,7 +85,7 @@ class MLP(nn.Module):
         dim_out: int,
         hidden_layers: List[int],
         activation: nn.Module = nn.ELU(),
-        layer_norm: bool = False
+        layer_norm: bool = False,
     ):
         super().__init__()
 
@@ -122,20 +122,18 @@ class EnsembleNetwork(nn.Module):
         self.dim_out = dim_out
         self.network_lst = network_lst
         self.K = len(network_lst)
-        self.params, self.buffers = torch.func.stack_module_state(
-            network_lst)
-        
+        self.params, self.buffers = torch.func.stack_module_state(network_lst)
+
         base_model = copy.deepcopy(network_lst[0])
-        base_model = base_model.to('meta')
-        
+        base_model = base_model.to("meta")
+
         def fmodel(params, buffers, x):
-            return torch.func.functional_call(base_model, (
-                params, buffers), (x,))
-            
+            return torch.func.functional_call(base_model, (params, buffers), (x,))
+
         self.map = torch.vmap(fmodel)
 
     def forward(self, x_batch):
-        """ Return the model in batch. """
+        """Return the model in batch."""
         # https://pytorch.org/tutorials/intermediate/ensembling.html
         if x_batch.shape[0] != self.K:
             raise ValueError("leading dimension must be equal to ensemble size.")
@@ -214,7 +212,7 @@ def train_network(
     dataset: TensorDataset,
     loss_fn,
     split=True,
-    callback=None
+    callback=None,
 ):
     """
     Common utility function to train a neural network.
@@ -238,7 +236,7 @@ def train_network(
         )
 
     net.train()
-    net = net.to(params.device)    
+    net = net.to(params.device)
 
     optimizer = optim.Adam(net.parameters(), params.adam_params.lr)
     scheduler = optim.lr_scheduler.CosineAnnealingLR(
@@ -274,10 +272,10 @@ def train_network(
             scheduler.step()
             training_loss += loss.item() * z_batch[0].shape[0]
         training_loss /= len(train_dataset)
-        
+
         if callback is not None:
             callback(net, loss.item(), epoch)
-            
+
         with torch.no_grad():
             for z_all in data_loader_eval:
                 z_all = tuple_to_device(z_all, params.device)
@@ -299,8 +297,8 @@ def train_network(
 
 
 def train_network_sampling(
-    net: nn.Module, params: TrainParams, sample_fn, loss_fn,
-    callback):
+    net: nn.Module, params: TrainParams, sample_fn, loss_fn, callback
+):
     """
     A variant of train_network that does not use a dataset but a random sampling
     function. The sampling function should have the signature
@@ -336,9 +334,9 @@ def train_network_sampling(
         loss.backward()
         optimizer.step()
         scheduler.step()
-        
+
         if callback is not None:
-            callback(net, loss.item(), epoch)        
+            callback(net, loss.item(), epoch)
 
         loss_eval = loss.clone().detach()
         loss_lst[epoch] = loss_eval.item()
@@ -382,6 +380,7 @@ def save_module(nn_module: torch.nn.Module, filename: str):
         os.makedirs(file_dir, exist_ok=True)
     torch.save(nn_module.state_dict(), filename)
 
+
 def tensor_linspace(start, end, steps=10):
     # linspace in torch, adopted from https://github.com/zhaobozb/layout2im.
     """
@@ -416,23 +415,24 @@ def tensor_linspace(start, end, steps=10):
 class MLPwEmbedding(torch.nn.Module):
     """
     Train an MLP with Embedding.
-    hidden_layers takes a list of hidden layers, 
+    hidden_layers takes a list of hidden layers,
     and S takes a positive integer value that corresponds to number of tokens.
     For example,
 
     MLP(dim_in=3, dim_out=5, S=10, nn_layers=[128, 128])
 
     creates a MLP with two hidden layers with 128 width.
-    
-    The architecture choice the MLPwEmbedding assumes that all the 
+
+    The architecture choice the MLPwEmbedding assumes that all the
     nn layers are of equal size.
     """
+
     def __init__(
         self,
         dim_in: int,
         dim_out: int,
         hidden_layers: List[int],
-        embedding_size: int, # number of tokens
+        embedding_size: int,  # number of tokens
         activation: nn.Module = nn.ELU(),
     ):
         super().__init__()
@@ -442,7 +442,7 @@ class MLPwEmbedding(torch.nn.Module):
         self.embedding_size = embedding_size
         self.hidden_layers = hidden_layers
         self.act = activation
-        
+
         # assert all elements of hideen layers are equal.
         if len(set(hidden_layers)) != 1:
             raise ValueError("hidden_layers must have same elements.")
@@ -452,8 +452,8 @@ class MLPwEmbedding(torch.nn.Module):
         self.final = nn.Linear(hidden_layers[-1], dim_out)
 
         self.layers = []
-        for i in range(len(hidden_layers)-1):
-            self.layers.append(LinearBlock(hidden_layers[i], hidden_layers[i+1]))
+        for i in range(len(hidden_layers) - 1):
+            self.layers.append(LinearBlock(hidden_layers[i], hidden_layers[i + 1]))
         self.hl = nn.Sequential(*self.layers)
 
     def forward(self, x: torch.Tensor, s: torch.int) -> torch.Tensor:
@@ -472,14 +472,20 @@ class LinearBlock(torch.nn.Module):
         self.linear = nn.Linear(dim_in, dim_out)
         self.act = activation
         self.layernorm = nn.LayerNorm(dim_out)
-        
+
     def forward(self, x, y):
         x = self.linear(x) * y
         x = self.layernorm(x)
         x = self.act(x)
         return x
 
+
 def generate_cosine_schedule(sigma_max, sigma_min, steps):
     # normalize space between 0 to 1.
     x = 0.5 * (torch.cos(torch.linspace(0, torch.pi, steps)) + 1)
     return (sigma_max - sigma_min) * x + sigma_min
+
+
+def get_current_sigma(sigma_lst, iter, max_iters):
+    idx = round(len(sigma_lst) * (iter / (max_iters + 1)) - 0.5)
+    return idx, sigma_lst[idx]

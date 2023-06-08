@@ -30,3 +30,5 @@ train:
   save_best_model: checkpoint/checkpoint.pth
   load_ckpt: null
   device: "cuda"
+
+train_model: True
