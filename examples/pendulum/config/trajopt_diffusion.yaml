@@ -1,5 +1,5 @@
 defaults:
-  - user: lujie
+  - user: user3 
   - plant_param: param1
 
 hydra:

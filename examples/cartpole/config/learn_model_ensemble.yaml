@@ -1,6 +1,6 @@
 defaults:
   - user: user2
-  - plant_param: param1
+  - plant_param: ensemble_param
 
 hydra:
   run:
@@ -13,24 +13,22 @@ seed: 123
 
 dataset:
   load_path: ${user.dataset_load_path}
+  sample_size: 1000000
 
 train:
   wandb:
     enabled: ${user.wandb_enabled}
     project: score_po
-    name: ${now:%Y.%m.%d-%H.%M.%S}_cartpole_score
     dir: ${user.run_dir}
+    name: ${now:%Y.%m.%d-%H.%M.%S}_cartpole
     entity: ${user.wandb_entity}
   adam:
     lr: 1e-3
-    epochs: 400
-    batch_size: 2048
+    epochs: 300
+    batch_size: 1024
   dataset_split: [0.8, 0.2]
-  save_best_model: ${user.save_score_ckpt}
+  save_best_model: checkpoint/dynamics_model.pth
+  load_ckpt: null
   device: "cuda"
-  sigma: 0.01
-  # sigma_max and sigma_min are used in the noised conditioned score estimator.
-  sigma_max: 0.25
-  sigma_min: 0.005
-  sigma_steps: 10
-  xu: True
+
+train_model: True

@@ -1,8 +1,0 @@
-run_dir: /home/terry/Documents/score_po_data/cartpole/${now:%Y-%m-%d}/${now:%H-%M-%S}
-
-dataset_load_path: /home/terry/Documents/score_po_data/cartpole/dataset.pth
-
-wandb_enabled: True
-wandb_entity: hjsuh94
-
-save_swingup_policy: ${user.run_dir}/swingup_openloop_policy.pth

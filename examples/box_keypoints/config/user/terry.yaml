@@ -1,6 +1,6 @@
-run_dir: /home/terry/Documents/score_po
+run_dir: ~/Documents/score_po
 
 wandb_enabled: True
 wandb_entity: hjsuh94
 
-dataset_dir: /home/terry/Documents/score_po/examples/box_keypoints/tensor_dataset.pkl
+dataset_dir: ~/Documents/score_po/examples/box_keypoints/tensor_dataset.pkl

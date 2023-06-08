@@ -330,7 +330,6 @@ class NNEnsembleDynamicalSystem(DynamicalSystem):
         for k, ds in enumerate(self.ds_lst):
             pre, ext = os.path.splitext(filename)
             ds.load_state_dict(torch.load(pre + "_{:02d}".format(k) + ext))
-
     def to(self, device):
         for ds in self.ds_lst:
             ds.to(device)

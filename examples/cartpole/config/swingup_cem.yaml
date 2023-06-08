@@ -18,19 +18,20 @@ trj:
     enabled: ${user.wandb_enabled}
     project: score_po
     dir: ${user.run_dir}
-    name: ${now:%Y.%m.%d-%H.%M.%S}_cartpole_swingup
+    name: ${now:%Y.%m.%d-%H.%M.%S}_cartpole_swingup_cem
     entity: ${user.wandb_entity}
   T: 60
-  std: 0.
+  std: 0.05
   lr: 1e-2
   max_iters: 20000
   save_best_model: ${user.save_swingup_trj}
   device: "cuda"
   load_ckpt: ${user.load_swingup_trj}
-  saving_period: null
+  saving_period: 100
+  n_elite: 4
+  batch_size: 10
   beta: 0.1
   train: True
 
 dynamics_load_ckpt: ${user.dynamics_load_ckpt}
-score_estimator_xu_load_ckpt: ${user.score_estimator_xu_load_ckpt}
-score_estimator_xux_load_ckpt: ${user.score_estimator_xux_load_ckpt}
+dde_xu_load_ckpt: ${user.dde_xu_load_ckpt}

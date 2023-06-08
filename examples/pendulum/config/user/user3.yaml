@@ -1,0 +1,8 @@
+run_dir: ~/score_po_data/pendulum/${now:%Y-%m-%d}/${now:%H-%M-%S}
+
+dataset_load_path: ~/score_po_data/pendulum/dataset.pth
+
+wandb_enabled: True
+wandb_entity: null
+
+save_swingup_policy: ${user.run_dir}/swingup_openloop_policy.pth

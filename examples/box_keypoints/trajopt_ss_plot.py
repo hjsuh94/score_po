@@ -68,7 +68,7 @@ class KeypointCost(Cost):
     def __init__(self):
         super().__init__()
         self.goal = np.load(
-            "/home/terry/Documents/score_po/examples/box_keypoints/goals/keypts_left.npy"
+            "~/Documents/score_po/examples/box_keypoints/goals/keypts_left.npy"
         )
         self.goal = torch.Tensor(self.goal).cuda()
 

@@ -1,8 +1,0 @@
-run_dir: /home/lu/score_po_data/pendulum/${now:%Y-%m-%d}/${now:%H-%M-%S}
-
-dataset_load_path: /home/lu/score_po_data/pendulum/dataset.pth
-
-wandb_enabled: True
-wandb_entity: lujie
-
-save_swingup_policy: ${user.run_dir}/swingup_openloop_policy.pth

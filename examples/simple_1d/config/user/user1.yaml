@@ -1,0 +1,4 @@
+run_dir: ~/Documents/score_po_data/simple_1d/${now:%Y-%m-%d}/${now:%H-%M-%S}
+
+wandb_enabled: True
+wandb_entity: null

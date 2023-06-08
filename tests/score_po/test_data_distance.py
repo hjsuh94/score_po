@@ -103,7 +103,7 @@ class TestDataDistance:
 
     @pytest.mark.parametrize("device", ("cpu", "cuda"))
     def test_energy_gradients(self, device):
-        # TODO(terry-suh): it's desirable to check against manual computations.
+        # TODO: it's desirable to check against manual computations.
         # Generate some arbitary data.
         data = torch.rand(5, 3).to(device)
         sigma = 0.2

@@ -3,7 +3,11 @@ from typing import List, Optional
 import numpy as np
 import torch
 
-from score_po.dynamical_system import DynamicalSystem, NNDynamicalSystem, midpoint_integration
+from score_po.dynamical_system import (
+    DynamicalSystem,
+    NNDynamicalSystem,
+    midpoint_integration,
+)
 import score_po.nn
 
 
@@ -75,6 +79,52 @@ class CartpolePlant(DynamicalSystem):
                     thetaddot.reshape((-1, 1)),
                 ),
                 axis=-1,
+            )
+
+    def visualize(self, ax, x: np.ndarray, **kwargs):
+        assert x.shape == (4,)
+        base_size = np.array([0.3, 0.1])
+        wheel_radius = 0.03
+        base_center = np.array([x[0], 2 * wheel_radius + base_size[1] / 2])
+        # Draw the base
+        base_vertices = base_center + (base_size / 2) * np.array(
+            [[-1, -1], [1, -1], [1, 1], [-1, 1], [-1, -1]]
+        )
+
+        ax.plot(base_vertices[:, 0], base_vertices[:, 1], **kwargs)
+        theta = x[1]
+
+        # Draw the pole
+        pole_width = 0.01
+        theta_shift = theta
+        pole = (
+            base_center
+            + (
+                np.array([pole_width, self.l2])
+                * np.array([[-0.5, 0], [0.5, 0], [0.5, -1], [-0.5, -1], [-0.5, 0]])
+            )
+            @ np.array(
+                [
+                    [np.cos(theta_shift), -np.sin(theta_shift)],
+                    [np.sin(theta_shift), np.cos(theta_shift)],
+                ]
+            ).T
+        )
+        # pole = base_center + plant.l2 * np.array(
+        #    [[0, 0], [np.cos(theta - np.pi / 2), np.sin(theta - np.pi / 2)]]
+        # )
+        ax.plot(pole[:, 0], pole[:, 1], **kwargs)
+
+        # Draw the wheels.
+        wheel_centers = [
+            np.array([x[0] - base_size[0] / 4, wheel_radius]),
+            np.array([x[0] + base_size[0] / 3, wheel_radius]),
+        ]
+        for wheel_center in wheel_centers:
+            ax.plot(
+                wheel_center[0] + wheel_radius * np.cos(np.linspace(0, 2 * np.pi, 100)),
+                wheel_center[1] + wheel_radius * np.sin(np.linspace(0, 2 * np.pi, 100)),
+                **kwargs
             )
 
 
