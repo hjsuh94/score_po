@@ -1,5 +1,5 @@
 defaults:
-  - user: glen
+  - user: user_a
 
 hydra:
   run:

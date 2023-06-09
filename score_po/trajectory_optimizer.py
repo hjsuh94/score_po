@@ -10,15 +10,25 @@ import wandb
 
 from score_po.dynamical_system import (
     DynamicalSystem,
-    NNEnsembleDynamicalSystem)
+    NNEnsembleDynamicalSystem,
+    sim_openloop,
+)
 from score_po.score_matching import (
-    ScoreEstimatorXux, ScoreEstimatorXu,
+    ScoreEstimatorXux,
+    ScoreEstimatorXu,
     NoiseConditionedScoreEstimatorXu,
-    NoiseConditionedScoreEstimatorXux)
-from score_po.data_distance import DataDistanceEstimatorXux
+    NoiseConditionedScoreEstimatorXux,
+)
+from score_po.data_distance import DataDistanceEstimatorXux, DataDistanceEstimatorXu
 from score_po.costs import Cost
 from score_po.trajectory import Trajectory, IVPTrajectory, BVPTrajectory, SSTrajectory
-from score_po.nn import WandbParams, save_module, tensor_linspace
+from score_po.nn import (
+    WandbParams,
+    save_module,
+    tensor_linspace,
+    generate_cosine_schedule,
+    get_current_sigma,
+)
 
 
 @dataclass
@@ -35,6 +45,7 @@ class TrajectoryOptimizerParams:
     saving_period: Optional[int] = 100
     device: str = "cuda"
     torch_optimizer: torch.optim.Optimizer = torch.optim.Adam
+    verbose: bool = True
 
     def __init__(self):
         self.wandb_params = WandbParams()
@@ -47,7 +58,6 @@ class TrajectoryOptimizerParams:
         self.saving_period = cfg.trj.saving_period
         self.load_ckpt = cfg.trj.load_ckpt
         self.device = cfg.trj.device
-        self.beta = cfg.trj.beta
         self.wandb_params.load_from_config(cfg, field="trj")
 
     def to_device(self, device):
@@ -61,7 +71,7 @@ class TrajectoryOptimizer:
         self.params = params
         self.cost = params.cost
         self.trj = params.trj
-        self.iter = 0        
+        self.iter = 0
 
     def get_value_loss(self, x_trj=None, u_trj=None):
         # Loop over trajectories to compute reward loss.
@@ -77,20 +87,30 @@ class TrajectoryOptimizer:
     def modify_gradients(self):
         pass
 
-    def initialize(self, xnext_trj_init=None, u_trj_init=None):
-        if xnext_trj_init is None:
-            xnext_trj_init = tensor_linspace(
-                self.trj.x0, self.trj.xT, steps=self.trj.xnext_trj.shape[0]
-            ).T
-            xnext_trj_init += torch.randn_like(xnext_trj_init) * 0.1
-        if u_trj_init is None:
+    def compute_loss(self):
+        return self.get_value_loss()
+
+    def initialize(self, x_trj_guess, u_trj_guess):
+        if not isinstance(self.trj, SSTrajectory):
+            if x_trj_guess is None:
+                if isinstance(self.trj, BVPTrajectory):
+                    xnext_trj_init = tensor_linspace(
+                        self.trj.x0, self.trj.xT, steps=self.trj.xnext_trj.shape[0]
+                    ).T
+                else:
+                    xnext_trj_init = torch.cat(self.trj.T * [self.trj.x0[None, :]])
+                self.trj.xnext_trj = torch.nn.Parameter(xnext_trj_init)
+            else:
+                self.trj.xnext_trj = torch.nn.Parameter(x_trj_guess[1:])
+
+        if u_trj_guess is None:
             u_trj_init = torch.zeros(self.trj.u_trj.shape).to(self.params.device)
             u_trj_init += torch.randn_like(u_trj_init) * 0.1
+            self.trj.u_trj = torch.nn.Parameter(u_trj_init)
+        else:
+            self.trj.u_trj = torch.nn.Parameter(u_trj_guess)
 
-        self.trj.xnext_trj = torch.nn.Parameter(xnext_trj_init)
-        self.trj.u_trj = torch.nn.Parameter(u_trj_init)
-
-    def iterate(self, callback=None, xnext_trj_init=None, u_trj_init=None):
+    def iterate(self, callback=None, x_trj_guess=None, u_trj_guess=None):
         """
         Callback is a function that can be called with signature
         f(self, loss, iter)
@@ -109,44 +129,49 @@ class TrajectoryOptimizer:
             )
 
         self.trj = self.trj.to(self.params.device)
-        self.initialize(xnext_trj_init=xnext_trj_init, u_trj_init=u_trj_init)
+        self.initialize(x_trj_guess, u_trj_guess)
         self.trj.train()
-        # x_trj, u_trj = self.rollout_trajectory()
-        loss = torch.tensor(1000.).cuda()#self.get_value_loss(x_trj, u_trj) + self.params.beta * self.get_penalty_loss(x_trj, u_trj)
+        loss = self.compute_loss()
 
         start_time = time.time()
-        print("Iteration: {:04d} | Cost: {:.3f} | Time: {:.3f}".format(0, loss, 0))
+        if self.params.verbose:
+            print("Iteration: {:04d} | Cost: {:.3f} | Time: {:.3f}".format(0, loss, 0))
         self.cost_lst = np.zeros(self.params.max_iters)
 
         best_cost = np.inf
-        self.cost_lst[0] = loss.item()
+        # self.cost_lst[0] = loss.item()
 
         optimizer = self.params.torch_optimizer(
             self.trj.parameters(), lr=self.params.lr
         )
-        
 
         for iter in range(self.params.max_iters - 1):
+
             if callback is not None and iter >= 1:
                 callback(self, loss.item(), iter, x_trj, u_trj)
             optimizer.zero_grad()
             x_trj, u_trj = self.rollout_trajectory()
             if iter == 0:
                 callback(self, loss.item(), iter, x_trj, u_trj)
-            loss1 = self.get_value_loss(x_trj, u_trj)
-            loss = loss1 + self.params.beta * self.get_penalty_loss(x_trj, u_trj)
+            value_loss = self.get_value_loss(x_trj, u_trj)
+            loss = value_loss + self.params.beta * self.get_penalty_loss(x_trj, u_trj)
+
             loss.backward()
             self.modify_gradients()
             optimizer.step()
             self.cost_lst[iter + 1] = loss.item()
+            
 
             if self.params.wandb_params.enabled:
-                wandb.log({"trj_loss": loss.item()})
+                wandb.log({"trj_loss": loss.item(), "value": value_loss.item()})
             save_model = False
             if loss.item() < best_cost:
                 best_cost = loss.item()
                 save_model = True
-            if self.params.saving_period is not None and iter % self.params.saving_period == 0:
+            if (
+                self.params.saving_period is not None
+                and iter % self.params.saving_period == 0
+            ):
                 save_model = True
             if self.params.save_best_model and save_model:
                 model_path = os.path.join(os.getcwd(), self.params.save_best_model)
@@ -155,12 +180,12 @@ class TrajectoryOptimizer:
                     os.makedirs(model_dir, exist_ok=True)
                 save_module(self.trj, model_path)
 
-            print(
-                "Iteration: {:04d} | Cost: {:.3f} | Cost no penalty: {:.3f} | Time: {:.3f}".format(
-                    iter + 1, loss.item(), loss1.item(), time.time() - start_time
-                )
-            )
-            
+            if self.params.verbose:
+                print(
+                    "Iteration: {:04d} | Cost: {:.3f} | Time: {:.3f}".format(
+                        iter + 1, loss.item(), time.time() - start_time
+                    ))
+
             self.iter += 1
 
         return self.cost_lst
@@ -203,16 +228,16 @@ class TrajectoryOptimizerSF(TrajectoryOptimizer):
 
     def modify_gradients(self):
         # Modify value loss by applying score function.
-        # TODO(terry-suh): Changing this to batch implementation will
+        # TODO: Changing this to batch implementation will
         # result in a much better speedup.
         x_trj, u_trj = self.trj.get_full_trajectory()
 
         z_trj = torch.cat((x_trj[:-1], u_trj, x_trj[1:]), dim=1)
         sz_trj = self.sf.get_score_z_given_z(z_trj)
         sx_trj, su_trj, sxnext_trj = self.sf.get_xux_from_z(sz_trj)
-        
-        weight = -self.params.sf.sigma ** 2 * self.params.beta
-   
+
+        weight = -self.params.sf.sigma**2 * self.params.beta
+
         if isinstance(self.trj, BVPTrajectory):
             self.trj.xnext_trj.grad += weight * sx_trj[1:]
             self.trj.xnext_trj.grad += weight * sxnext_trj[:-1]
@@ -226,6 +251,8 @@ class TrajectoryOptimizerSF(TrajectoryOptimizer):
 
 
 """ Variant of TrajectoryOptimizerSF with Variance annealing """
+
+
 class TrajectoryOptimizerNCSF(TrajectoryOptimizerSF):
     def __init__(self, params: TrajectoryOptimizerSFParams, **kwargs):
         super().__init__(params)
@@ -237,18 +264,20 @@ class TrajectoryOptimizerNCSF(TrajectoryOptimizerSF):
         idx = round(
             len(self.sigma_lst) * ((self.iter) / (self.params.max_iters + 1)) - 0.5)
         return idx, self.sf.sigma_lst[idx]
-        
+
     def modify_gradients(self):
         # Modify value loss by applying score function.
-        sigma_idx, sigma = self.get_current_sigma()
-        #weight = -1 / sigma ** 2 * self.params.beta
-        weight = -sigma ** 2 * self.params.beta
+        sigma_idx, sigma = get_current_sigma(
+            self.sf.sigma_lst, self.iter, self.params.max_iters
+        )
+        # weight = -1 / sigma ** 2 * self.params.beta
+        weight = -(sigma**2) * self.params.beta
         x_trj, u_trj = self.trj.get_full_trajectory()
-        
+
         z_trj = torch.cat((x_trj[:-1], u_trj, x_trj[1:]), dim=1)
         sz_trj = self.sf.get_score_z_given_z(z_trj, sigma_idx)
         sx_trj, su_trj, sxnext_trj = self.sf.get_xux_from_z(sz_trj)
-   
+
         if isinstance(self.trj, BVPTrajectory):
             self.trj.xnext_trj.grad += weight * sx_trj[1:]
             self.trj.xnext_trj.grad += weight * sxnext_trj[:-1]
@@ -330,6 +359,9 @@ class TrajectoryOptimizerDDE(TrajectoryOptimizer):
         z_trj = torch.cat((x_trj[:-1], u_trj, x_trj[1:]), dim=1)
         return self.dde.get_energy_to_data(z_trj).sum()
 
+    def compute_loss(self):
+        return self.get_value_loss() + self.params.beta * self.get_penalty_loss()
+
 
 """ TrajectoryOptimizer with First Order + SS + SF"""
 
@@ -337,6 +369,7 @@ class TrajectoryOptimizerDDE(TrajectoryOptimizer):
 @dataclass
 class TrajectoryOptimizerSSParams(TrajectoryOptimizerParams):
     beta: float = 1.0
+    beta_min: float = 1.0
     sf: ScoreEstimatorXu = None
     ds: DynamicalSystem = None
 
@@ -346,6 +379,10 @@ class TrajectoryOptimizerSSParams(TrajectoryOptimizerParams):
     def load_from_config(self, cfg: DictConfig):
         super().load_from_config(cfg)
         self.beta = cfg.trj.beta
+        if hasattr(cfg.trj, "beta_min"):
+            self.beta_min = cfg.trj.beta_min
+        else:
+            self.beta_min = self.beta
 
     def to_device(self, device):
         super().to_device(device)
@@ -362,11 +399,16 @@ class TrajectoryOptimizerSS(TrajectoryOptimizer):
         assert isinstance(self.trj, SSTrajectory)
         assert isinstance(self.sf, ScoreEstimatorXu)
 
-    def initialize(self, xnext_trj_init=None, u_trj_init=None):
-        if u_trj_init is None:
+        self.beta_schedule = generate_cosine_schedule(
+            self.params.beta, self.params.beta_min, self.params.max_iters
+        )
+
+    def initialize(self, x_trj_guess, u_trj_guess):
+        if u_trj_guess is None:
             u_trj_init = torch.zeros(self.trj.u_trj.shape).to(self.params.device)
-            u_trj_init += torch.randn_like(u_trj_init) * 0.5
-        self.trj.u_trj = torch.nn.Parameter(u_trj_init)
+            u_trj_init += torch.randn_like(u_trj_init) * 0.0
+        else:
+            u_trj_init = u_trj_guess
 
     def rollout_trajectory(self):
         """
@@ -374,14 +416,7 @@ class TrajectoryOptimizerSS(TrajectoryOptimizer):
             x0_batch: initial condition of shape (B, dim_x)
             noise_trj_batch: (B, T, dim_u) noise output on the output of trajectory.
         """
-        x_trj = torch.zeros((self.trj.T + 1, self.ds.dim_x)).to(self.params.device)
-        x_trj[0] = self.trj.x0[None, :]
-        # x_trj = torch.hstack((x_trj, self.trj.x0[None, :]))
-
-        for t in range(self.params.T):
-            x_trj[t + 1] = self.ds.dynamics(x_trj[t], self.trj.u_trj[t])
-            # x_trj = torch.hstack((x_trj, x_next_batch[None, :]))
-
+        x_trj = sim_openloop(self.ds, self.trj.x0, self.trj.u_trj, noise_trj=None)
         return x_trj, self.trj.u_trj
 
     def get_value_loss(self, x_trj=None, u_trj=None):
@@ -412,18 +447,19 @@ class TrajectoryOptimizerSS(TrajectoryOptimizer):
         score = torch.einsum("ti,ti->t", z_trj, sz_trj).sum()
         return -score
 
+    def compute_loss(self):
+        beta = self.beta_schedule[self.iter]
+        return self.get_value_loss() + beta * self.get_penalty_loss()
+
 
 """ Variant of TrajectoryOptimizerSS with Variance annealing """
+
+
 class TrajectoryOptimizerNCSS(TrajectoryOptimizerSS):
     def __init__(self, params: TrajectoryOptimizerSFParams, **kwargs):
         super().__init__(params)
         self.sigma_lst = params.sf.sigma_lst
         assert isinstance(self.sf, NoiseConditionedScoreEstimatorXu)
-        
-    def get_current_sigma(self):
-        idx = round(
-            len(self.sigma_lst) * ((self.iter) / (self.params.max_iters + 1)) - 0.5)
-        return idx, self.sf.sigma_lst[idx] 
 
     def get_penalty_loss(self):
         """
@@ -434,10 +470,12 @@ class TrajectoryOptimizerNCSS(TrajectoryOptimizerSS):
         (∇_z log p(z) * z) and and detach ∇_z log p(z) from the computation graph
         so that ∇_θ(∇_z log p(z) * z) = ∇_z log p(z) * ∇_θ z.
         """
-        idx, sigma = self.get_current_sigma()
+        idx, sigma = get_current_sigma(
+            self.sf.sigma_lst, self.iter, self.params.max_iters
+        )
         x_trj, u_trj = self.rollout_trajectory()
         z_trj = torch.cat((x_trj[:-1], u_trj), dim=1)
-        
+
         sz_trj = self.sf.get_score_z_given_z(z_trj, idx)
 
         # Here, ∇_z log p(z) is detached from the computation graph so that we ignore
@@ -446,6 +484,109 @@ class TrajectoryOptimizerNCSS(TrajectoryOptimizerSS):
 
         score = torch.einsum("ti,ti->t", z_trj, sz_trj).sum()
         return -score
+
+
+@dataclass
+class TrajectoryOptimizerDirTranParams(TrajectoryOptimizerParams):
+    alpha: float = 100.0
+    beta: float = 1.0
+    sf: ScoreEstimatorXu = None
+    ds: DynamicalSystem = None
+
+    def __init__(self):
+        super().__init__()
+
+    def load_from_config(self, cfg: DictConfig):
+        super().load_from_config(cfg)
+        self.alpha = cfg.trj.alpha
+        self.beta = cfg.trj.beta
+
+    def to_device(self, device):
+        super().to_device(device)
+        self.sf.to(device)
+        if isinstance(self.ds, torch.nn.Module):
+            self.ds.to(device)
+
+
+class TrajectoryOptimizerDirTran(TrajectoryOptimizer):
+    def __init__(self, params: TrajectoryOptimizerDirTranParams, **kwargs):
+        super().__init__(params)
+        self.sf = params.sf
+        self.ds = params.ds
+        assert isinstance(self.sf, ScoreEstimatorXu)
+        assert not isinstance(self.trj, SSTrajectory)
+
+    def get_value_loss(self):
+        # Loop over trajectories to compute reward loss.
+        x_trj, u_trj = self.trj.get_full_trajectory()
+        cost = self.cost.get_running_cost_batch(x_trj[:-1], u_trj[:]).sum()
+        cost += self.cost.get_terminal_cost(x_trj[-1])
+        return cost
+
+    def get_dynamics_loss(self):
+        # Loop over trajectories to compute reward loss.
+        x_trj, u_trj = self.trj.get_full_trajectory()
+
+        # Compute one-step rollouts.
+        # T x dim_x
+        xnext_true = self.ds.dynamics_batch(x_trj[:-1], u_trj)
+        error = xnext_true - x_trj[1:]
+        x_weights = 1 / self.ds.x_normalizer.k
+        return torch.einsum("Tx,x,Tx->T", error, x_weights, error).sum()
+
+    def modify_gradients(self):
+        # Modify value loss by applying score function.
+        # TODO: Changing this to batch implementation will
+        # result in a much better speedup.
+        x_trj, u_trj = self.trj.get_full_trajectory()
+
+        z_trj = torch.cat((x_trj[:-1], u_trj), dim=1)
+        sz_trj = self.sf.get_score_z_given_z(z_trj)
+        sx_trj, su_trj = self.sf.get_xu_from_z(sz_trj)
+
+        weight = -self.params.sf.sigma**2 * self.params.beta
+
+        if isinstance(self.trj, BVPTrajectory):
+            self.trj.xnext_trj.grad += weight * sx_trj[1:]
+            self.trj.u_trj.grad += weight * su_trj
+        elif isinstance(self.trj, IVPTrajectory):
+            self.trj.xnext_trj.grad[:-1] += weight * sx_trj[1:]
+            self.trj.u_trj.grad += weight * su_trj
+        else:
+            raise ValueError("Must be BVPTrajectory or IVPTrajectory")
+
+    def compute_loss(self):
+        # alpha = self.params.alpha * (self.iter / self.params.max_iters)
+        return self.get_value_loss() + self.params.alpha * self.get_dynamics_loss()
+
+
+class TrajectoryOptimizerNCDirTran(TrajectoryOptimizerDirTran):
+    def __init__(self, params: TrajectoryOptimizerDirTranParams, **kwargs):
+        super().__init__(params)
+        self.sigma_lst = params.sf.sigma_lst
+        assert isinstance(self.sf, NoiseConditionedScoreEstimatorXu)
+
+    def modify_gradients(self):
+        # Modify value loss by applying score function.
+        sigma_idx, sigma = get_current_sigma(
+            self.sf.sigma_lst, self.iter, self.params.max_iters
+        )
+        # weight = -1 / sigma ** 2 * self.params.beta
+        weight = -(sigma**2) * self.params.beta
+        x_trj, u_trj = self.trj.get_full_trajectory()
+
+        z_trj = torch.cat((x_trj[:-1], u_trj), dim=1)
+        sz_trj = self.sf.get_score_z_given_z(z_trj, sigma_idx)
+        sx_trj, su_trj = self.sf.get_xu_from_z(sz_trj)
+
+        if isinstance(self.trj, BVPTrajectory):
+            self.trj.xnext_trj.grad += weight * sx_trj[1:]
+            self.trj.u_trj.grad += weight * su_trj
+        elif isinstance(self.trj, IVPTrajectory):
+            self.trj.xnext_trj.grad[:-1] += weight * sx_trj[1:]
+            self.trj.u_trj.grad += weight * su_trj
+        else:
+            raise ValueError("Must be BVPTrajectory or IVPTrajectory")
 
 
 """ Variant of TrajectoryOptimizerSS with Variance annealing """
@@ -516,12 +657,12 @@ class TrajectoryOptimizerNCSS_Image(TrajectoryOptimizerSS):
         score = weight * torch.einsum("ti,ti->t", z_trj.reshape(z_trj.shape[0],-1), sz_trj.reshape(z_trj.shape[0],-1)).sum()
 
         return -score
-    
+
 @dataclass
 class TrajectoryOptimizerSSEnsembleParams(TrajectoryOptimizerParams):
     beta: float = 1.0
     ds: DynamicalSystem = None
-    
+
     def __init__(self):
         super().__init__()
 
@@ -542,35 +683,40 @@ class TrajectoryOptimizerSSEnsemble(TrajectoryOptimizer):
         self.K = len(self.ds.ds_lst)
         assert isinstance(self.trj, SSTrajectory)
         assert isinstance(self.ds, NNEnsembleDynamicalSystem)
-        
-    def initialize(self, xnext_trj_init=None, u_trj_init=None):
-        u_trj_init = torch.zeros(self.trj.u_trj.shape).to(self.params.device)
-        self.trj.u_trj = torch.nn.Parameter(u_trj_init)
-        
+
+    def initialize(self, x_trj_guess=None, u_trj_guess=None):
+        if u_trj_guess is None:
+            u_trj_init = torch.zeros(self.trj.u_trj.shape).to(self.params.device)
+        else:
+            u_trj_init = u_trj_guess.to(self.device)
+
+
     def rollout_trajectory(self):
         """
         Rollout trajectory with ensembles.
         """
-        x_trj = torch.zeros(
-            (self.K , self.trj.T + 1, self.ds.dim_x)).to(self.params.device)
-        u_trj = torch.cat(self.K * [self.trj.u_trj[None,:,:]])
-        x_trj[:,0,:] = self.trj.x0
-        
+        x_trj = torch.zeros((self.K, self.trj.T + 1, self.ds.dim_x)).to(
+            self.params.device
+        )
+        u_trj = torch.cat(self.K * [self.trj.u_trj[None, :, :]])
+        x_trj[:, 0, :] = self.trj.x0
+
         for t in range(self.trj.T):
-            x_trj[:,t+1,:] = self.ds.dynamics_batch(
-                x_trj[:,t,:][:,None,:], u_trj[:,t,:][:,None,:]
-            )[:,0,:]
+            x_trj[:, t + 1, :] = self.ds.dynamics_batch(
+                x_trj[:, t, :][:, None, :], u_trj[:, t, :][:, None, :]
+            )[:, 0, :]
 
         return x_trj, u_trj
-        
+
     def get_value_loss(self):
         # Loop over trajectories to compute reward loss.
         x_trj, u_trj = self.rollout_trajectory()
         cost = torch.zeros(self.K).to(self.params.device)
         for k in range(self.K):
             cost[k] += self.cost.get_running_cost_batch(
-                x_trj[k,:-1,:], u_trj[k,:,:]).sum()
-            cost[k] += self.cost.get_terminal_cost(x_trj[k,-1,:])
+                x_trj[k, :-1, :], u_trj[k, :, :]
+            ).sum()
+            cost[k] += self.cost.get_terminal_cost(x_trj[k, -1, :])
         return cost.mean()
 
     def get_penalty_loss(self):
@@ -578,9 +724,13 @@ class TrajectoryOptimizerSSEnsemble(TrajectoryOptimizer):
         cost = torch.zeros(self.K).to(self.params.device)
         for k in range(self.K):
             cost[k] += self.cost.get_running_cost_batch(
-                x_trj[k,:-1,:], u_trj[k,:,:]).sum()
-            cost[k] += self.cost.get_terminal_cost(x_trj[k,-1,:])
+                x_trj[k, :-1, :], u_trj[k, :, :]
+            ).sum()
+            cost[k] += self.cost.get_terminal_cost(x_trj[k, -1, :])
         return cost.var()
+
+    def compute_loss(self):
+        return self.get_value_loss() + self.params.beta * self.get_penalty_loss()
 
 
 class TrajectoryOptimizerSSEnsembleImage(TrajectoryOptimizer):
@@ -650,45 +800,82 @@ class TrajectoryOptimizerSSEnsembleImage(TrajectoryOptimizer):
         return cost.var()
 
 @dataclass
-class CEMEnsembleParams(TrajectoryOptimizerParams):
-    beta: float = 1.0
-    ds: DynamicalSystem = None
+class CEMParams(TrajectoryOptimizerParams):
     n_elite: int = 3
     batch_size: int = 3 #5#10
     std: float = 0.05
-    
+    ds: DynamicalSystem = None
+
     def __init__(self):
         super().__init__()
 
     def load_from_config(self, cfg: DictConfig):
         super().load_from_config(cfg)
-        self.beta = cfg.trj.beta
+        if hasattr(cfg.trj, "n_elite"):
+            self.n_elite = cfg.trj.n_elite
+        if hasattr(cfg.trj, "batch_size"):
+            self.batch_size = cfg.trj.batch_size
         self.std = cfg.trj.std
 
     def to_device(self, device):
         super().to_device(device)
-        if isinstance(self.ds, torch.nn.Module):
-            self.ds.to(device)
 
 
-class CEMEnsemble(TrajectoryOptimizerSSEnsemble):
-    def __init__(self, params: CEMEnsembleParams, **kwargs):
+class CEM(TrajectoryOptimizer):
+    params: CEMParams
+    ds: DynamicalSystem
+
+    def __init__(self, params: CEMParams, **kwargs):
         super().__init__(params)
-    
+        self.ds = params.ds
+
+    def initialize(self):
+        if self.trj is None:
+            u_trj_init = torch.zeros(self.trj.u_trj.shape).to(self.params.device)
+            u_trj_init += torch.randn_like(u_trj_init) * 0.0
+            self.trj.u_trj = torch.nn.Parameter(u_trj_init)
+
+    def rollout_trajectory(self):
+        """
+        Rollout policy in batch, given
+            x0_batch: initial condition of shape (B, dim_x)
+            noise_trj_batch: (B, T, dim_u) noise output on the output of trajectory.
+        """
+        x_trj = sim_openloop(self.ds, self.trj.x0, self.trj.u_trj, noise_trj=None)
+        return x_trj, self.trj.u_trj
+
+    def _get_value_loss(self, x_trj, u_trj):
+        cost = self.cost.get_running_cost_batch(x_trj[:-1], u_trj[:]).sum()
+        cost += self.cost.get_terminal_cost(x_trj[-1])
+        return cost
+
+    def get_value_loss(self):
+        # Loop over trajectories to compute reward loss.
+        x_trj, u_trj = self.rollout_trajectory()
+        return self._get_value_loss(x_trj, u_trj)
+
+    def compute_loss(self):
+        return self.get_value_loss()
+
     def update_trajectory(self):
-        u_trj_batch = torch.cat(self.params.batch_size * [self.trj.u_trj[None,:]])
+        u_trj_batch = self.trj.u_trj.unsqueeze(0).repeat(
+            [self.params.batch_size] + [1] * self.trj.u_trj.ndim
+        )
         u_trj_batch += torch.randn_like(u_trj_batch) * self.params.std
         cost_lst = torch.zeros(self.params.batch_size).to(self.params.device)
         for b in range(self.params.batch_size):
-            self.trj.u_trj = torch.nn.Parameter(u_trj_batch[b,:,:])
-            cost_lst[b] = self.get_value_loss() + self.params.beta * self.get_penalty_loss()
+            self.trj.u_trj = torch.nn.Parameter(u_trj_batch[b])
+            cost_lst[b] = self.compute_loss()
         _, ind = torch.topk(cost_lst, self.params.n_elite, largest=False)
-        next_trj = u_trj_batch[ind, : ,:].mean(dim=0)
+        next_trj = u_trj_batch[ind].mean(dim=0)
         self.trj.u_trj = torch.nn.Parameter(next_trj)
-    
+
+    def compute_loss(self):
+        self.get_value_loss() + self.params.beta * self.get_penalty_loss()
+
     def iterate(self, callback=None):
         """
-        Callback is a function that can be called with signature 
+        Callback is a function that can be called with signature
         f(self, loss, iter)
         """
         if self.params.wandb_params.enabled:
@@ -708,7 +895,7 @@ class CEMEnsemble(TrajectoryOptimizerSSEnsemble):
         self.initialize()
         self.trj.train()
 
-        loss = self.get_value_loss()
+        loss = self.compute_loss()
 
         start_time = time.time()
         print("Iteration: {:04d} | Cost: {:.3f} | Time: {:.3f}".format(0, loss, 0))
@@ -718,14 +905,18 @@ class CEMEnsemble(TrajectoryOptimizerSSEnsemble):
         for iter in range(self.params.max_iters - 1):
             if callback is not None:
                 callback(self, loss.item(), iter)
-                
+
             self.update_trajectory()
-            loss = self.get_value_loss() + self.params.beta * self.get_penalty_loss()
+            value = self.get_value_loss()
+            loss = self.compute_loss()
             self.cost_lst[iter + 1] = loss.item()
 
             if self.params.wandb_params.enabled:
-                wandb.log({"trj_loss": loss.item()})
-            if self.params.saving_period is not None and iter % self.params.saving_period == 0:
+                wandb.log({"trj_loss": loss.item(), "value": value.item()})
+            if (
+                self.params.saving_period is not None
+                and iter % self.params.saving_period == 0
+            ):
                 model_path = os.path.join(os.getcwd(), self.params.save_best_model)
                 model_dir = os.path.dirname(model_path)
                 if not os.path.exists(model_dir):
@@ -737,12 +928,124 @@ class CEMEnsemble(TrajectoryOptimizerSSEnsemble):
                     iter + 1, loss.item(), time.time() - start_time
                 )
             )
-            
+
             self.iter += 1
 
         return self.cost_lst
 
 
+@dataclass
+class CEMEnsembleParams(CEMParams):
+    beta: float = 1.0
+    ds: DynamicalSystem = None
+
+    def __init__(self):
+        super().__init__()
+
+    def load_from_config(self, cfg: DictConfig):
+        super().load_from_config(cfg)
+        self.beta = cfg.trj.beta
+
+    def to_device(self, device):
+        super().to_device(device)
+        if isinstance(self.ds, torch.nn.Module):
+            self.ds.to(device)
+
+
+class CEMEnsemble(CEM, TrajectoryOptimizerSSEnsemble):
+    # Both CEM and TrajectoryOptimizerSSEnsemble define iterate() function, but we
+    # want to use CEM's iterate function, so we put CEM before
+    # TrajectoryOptimizerSSEnsemble
+    def __init__(self, params: CEMEnsembleParams, **kwargs):
+        super().__init__(params)
+
+    def rollout_trajectory(self):
+        """
+        Rollout trajectory with ensembles.
+        """
+        x_trj = torch.zeros((self.K, self.trj.T + 1, self.ds.dim_x)).to(
+            self.params.device
+        )
+        u_trj = torch.cat(self.K * [self.trj.u_trj[None, :, :]])
+        x_trj[:, 0, :] = self.trj.x0
+
+        for t in range(self.trj.T):
+            x_trj[:, t + 1, :] = self.ds.dynamics_batch(
+                x_trj[:, t, :][:, None, :], u_trj[:, t, :][:, None, :]
+            )[:, 0, :]
+
+        return x_trj, u_trj
+
+    def get_value_loss(self):
+        # Loop over trajectories to compute reward loss.
+        x_trj, u_trj = self.rollout_trajectory()
+        cost = torch.zeros(self.K).to(self.params.device)
+        for k in range(self.K):
+            cost[k] += self.cost.get_running_cost_batch(
+                x_trj[k, :-1, :], u_trj[k, :, :]
+            ).sum()
+            cost[k] += self.cost.get_terminal_cost(x_trj[k, -1, :])
+        return cost.mean()
+
+    def get_penalty_loss(self):
+        x_trj, u_trj = self.rollout_trajectory()
+        cost = torch.zeros(self.K).to(self.params.device)
+        for k in range(self.K):
+            cost[k] += self.cost.get_running_cost_batch(
+                x_trj[k, :-1, :], u_trj[k, :, :]
+            ).sum()
+            cost[k] += self.cost.get_terminal_cost(x_trj[k, -1, :])
+        return cost.var()
+
+    def compute_loss(self):
+        return self.get_value_loss() + self.params.beta * self.get_penalty_loss()
+
+    def update_trajectory(self):
+        u_trj_batch = self.trj.u_trj.unsqueeze(0).repeat(
+            [self.params.batch_size] + [1] * self.trj.u_trj.ndim
+        )
+        u_trj_batch += torch.randn_like(u_trj_batch) * self.params.std
+        cost_lst = torch.zeros(self.params.batch_size).to(self.params.device)
+        for b in range(self.params.batch_size):
+            self.trj.u_trj = torch.nn.Parameter(u_trj_batch[b])
+            cost_lst[b] = self.compute_loss()
+        _, ind = torch.topk(cost_lst, self.params.n_elite, largest=False)
+        next_trj = u_trj_batch[ind].mean(dim=0)
+        self.trj.u_trj = torch.nn.Parameter(next_trj)
+
+
+@dataclass
+class CEMDataDistanceEstimatorParams(CEMParams):
+    beta: float = 1.0
+    dde: DataDistanceEstimatorXu = None
+
+    def __init__(self):
+        super().__init__()
+
+    def load_from_config(self, cfg: DictConfig):
+        super().load_from_config(cfg)
+        self.beta = cfg.trj.beta
+
+    def to_device(self, device):
+        super().to_device(device)
+        if isinstance(self.ds, torch.nn.Module):
+            self.dde.to(device)
+
+
+class CEMDataDistanceEstimator(CEM):
+    def __init__(self, params: CEMDataDistanceEstimatorParams, **kwargs):
+        super().__init__(params)
+        self.dde = params.dde
+
+    def _get_penalty_loss(self, x_trj, u_trj):
+        z_trj = torch.cat((x_trj[:-1], u_trj), dim=1)
+        return self.dde.get_energy_to_data(z_trj).sum()
+
+    def compute_loss(self):
+        x_trj, u_trj = self.rollout_trajectory()
+        return self._get_value_loss(
+            x_trj, u_trj
+        ) + self.params.beta * self._get_penalty_loss(x_trj, u_trj)
 class CEMEnsembleImage(TrajectoryOptimizerSSEnsembleImage):
     def __init__(self, params: CEMEnsembleParams, **kwargs):
         super().__init__(params)

@@ -1,5 +1,5 @@
 defaults:
-  - user: glen
+  - user: user_a
 
 data:
   channels: 2
@@ -12,7 +12,7 @@ nn_layers: [512, 512, 512, 512]
 dataset_size: 200000
 
 load_data: True
-load_data_path: '/home/gchou/PycharmProjects/score_po_data/pixels_singleint_line/200000.pt'
+load_data_path: '/home/Documents/PycharmProjects/score_po_data/pixels_singleint_line/200000.pt'
 
 model:
   ngf: 128
