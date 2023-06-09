@@ -1,0 +1,62 @@
+defaults:
+  - user: user_a
+
+hydra:
+  run:
+    dir: ${user.run_dir}
+
+nn_layers: [1024, 1024, 512, 512]
+plot_period: 100
+sf_path: "examples/pixels_singleint_line/weights/score_xux_010.pth"
+dde_path: "examples/pixels_singleint_line/weights/dde_xux.pth"
+
+model:
+  ngf: 128
+  num_classes: 232
+  sigma_begin: 50
+  sigma_end: 0.01
+
+trj:
+  T: 25
+  x0: [0.8, -0.2]
+  xT: [-0.8, -0.2]
+  batch_size: 1 # 1 for trajopt.
+  lr: 0.03 #1e-2
+  max_iters: 2320
+  save_best_model: checkpoint.pth
+  saving_period: 100
+  load_ckpt: null
+  device: "cuda"
+  beta: 0.01 #10.
+
+  wandb:
+    enabled: ${user.wandb_enabled}
+    project: score_po
+    dir: ${user.run_dir}
+    name: ${now:%Y.%m.%d-%H.%M.%S}
+    entity: ${user.wandb_entity}
+
+cost:
+  Q: [10, 10]
+  R: [10, 10]
+  Qd: [10, 10]
+  xd: [-0.8, -0.2] #[0, 0]
+
+train:
+  wandb:
+    enabled: ${user.wandb_enabled}
+    project: score_po
+    dir: ${user.run_dir}
+    name: ${now:%Y.%m.%d-%H.%M.%S}_pixels_singleint_line
+    entity: ${user.wandb_entity}
+  adam:
+    lr: 1e-4
+    epochs: 2000
+    batch_size: 128
+  dataset_split: [0.99, 0.01]
+  save_best_model: ncsn_xux.pth
+  load_ckpt: null
+  device: "cuda"
+
+data:
+  channels: 3
