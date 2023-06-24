@@ -1,2 +1,4 @@
 # score_po
-Distribution Risk Policy Optimization with Score Matching
+
+Code for "Fighting Uncertainty with Gradients: Offline Reinforcement Learning via Diffusion Score Matching"
+
