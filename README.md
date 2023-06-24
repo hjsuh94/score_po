@@ -11,6 +11,10 @@ We perform uncertainty penalization optimal control problems of the folloinwg fo
 
 where θ are policy parameters, r is the reward, and p is the perturbed empirical distribution of data that encourages rollout trajectories to stay close to data. 
 
+### Score-Guided Planning (SGP)
+
+Our codebase supports general feedback policy optimization, but examples mainly evolve around open-loop planning. This is a special case of uncertainty-penalized optimal control where the policy is parametrized as an open-loop sequence of inputs.
+
 ---
 
 ### How to Run 
