@@ -39,6 +39,14 @@ defaults:
   - user: new_user
 ```
 3. Run `python examples/cartpole/learn_model.py` from the cloned directory. 
+
+#### Running Tests
+
+We use `pytest` for testing and CI. To run tests, do
+```
+pytest .
+```
+from the cloned directory.
  
 ---
 
