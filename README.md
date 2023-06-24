@@ -15,8 +15,44 @@ where θ are policy parameters, r is the reward, and p is the perturbed empirica
 
 ### How to Run 
 
+#### Installation 
+This repo is mainly written in `torch`, and heavily uses `wandb` and `hydra-core`. For some robotic examples, [`drake`](https://drake.mit.edu/) might be required as a dependency. 
 
+To install these dependencies and set the path, simply run
+```
+python -m pip install -r requirements.txt
+```
+after cloning the repo, and add the python path to `~/.bashrc`. Since this repo relies on calling lines such as `import examples`, we recommend putting this line at the
+end of the bashrc file. 
+```
+export PYTHONPATH=${HOME}/score_po:${PYTHONPATH}
+```
+
+#### Running with Hydra 
+We use hydra for our examples, and users are required to have a config file. Add your own user config file under `config/user` for each example, and modify the config files to have your user name.
+
+For example, to run `examples/cartpole/learn_model.py`, 
+1. Add a profile to `examples/cartpole/config/user` as `new_user.yaml`, following patterns of `terry.yaml`.
+2. In `examples/cartpole/config/learn_model.yaml`, set
+```
+defaults:
+  - user: new_user
+```
+3. Run `python examples/cartpole/learn_model.py` from the cloned directory. 
+ 
+---
+
+### Examples 
+
+All the examples can be found in the examples folder with instructions on how to run.
+
+- Simple1D 
+- Cart-pole system 
+- The pixel-space single integrator: use branch `pixels_glen`. 
+- D4RL Mujoco Benchmark
+- Box-Keypoint Pushing Example: for hardware code, use branch `lcm_hardware`. 
 
 ---
 
 ### Citations 
+
