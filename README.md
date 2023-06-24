@@ -7,7 +7,7 @@ This repository contains code for "Fighting Uncertainty with Gradients: Offline 
 
 We perform uncertainty penalization optimal control problems of the folloinwg form,
 
-![image](https://github.com/hjsuh94/score_po/assets/22463195/f84bfb61-447b-4be7-a52f-b415ec222d6c)
+![image](https://github.com/hjsuh94/score_po/assets/22463195/212bc05c-a59c-4ee0-9b95-14ffafd8fa5e)
 
 where θ are policy parameters, r is the reward, and p is the perturbed empirical distribution of data that encourages rollout trajectories to stay close to data. 
 
