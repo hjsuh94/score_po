@@ -7,6 +7,13 @@ This repository contains code for "Fighting Uncertainty with Gradients: Offline 
 
 We perform uncertainty penalization optimal control problems of the folloinwg form,
 
+```
+max_\theta E_{x_i\sim\rho} [\sum_t r(x_t,u_t) + \beta \sum_t \log p(x_t,u_t)
+      s.t. x_{t+1} = f(x_t, u_t) forall t,
+               u_t = pi_\theta(x_t) forall t,
+               x_0 = x_i 
+```
+
 ![image](https://github.com/hjsuh94/score_po/assets/22463195/e6040461-8371-4027-9f7e-f638945709ab)
 
 where θ are policy parameters, r is the reward, and p is the perturbed empirical distribution of data that encourages rollout trajectories to stay close to data. 
